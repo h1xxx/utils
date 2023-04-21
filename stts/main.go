@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -32,7 +33,19 @@ type varsT struct {
 	meminfoFD *os.File
 }
 
+type argsT struct {
+	bench *bool
+}
+
+var args argsT
+
+func init() {
+	args.bench = flag.Bool("b", false, "perform a benchmark")
+}
+
 func main() {
+	flag.Parse()
+
 	var st sttsT
 	var vars varsT
 
@@ -40,12 +53,9 @@ func main() {
 	getSysinfo(&st, &vars)
 	prettyPrint(st)
 
-	start := time.Now()
-	for i := 0; i < 1000000; i++ {
-		getSysinfo(&st, &vars)
+	if *args.bench {
+		doBench(&st, &vars)
 	}
-	duration := time.Since(start)
-	fmt.Printf("time 1m: %.5ss\n", duration)
 
 	vars.meminfoFD.Close()
 }
