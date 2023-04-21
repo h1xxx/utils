@@ -34,7 +34,7 @@ func getSysinfo(st *sttsT, vars *varsT) {
 }
 
 func readMeminfo(st *sttsT, vars *varsT) {
-	scanner := bufio.NewScanner(vars.meminfoFD)
+	scanner := bufio.NewScanner(vars.meminfoFd)
 	lineID := 1
 	for scanner.Scan() {
 		switch lineID {

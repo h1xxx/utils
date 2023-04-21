@@ -4,7 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"time"
+
+	fp "path/filepath"
 )
 
 type sttsT struct {
@@ -12,6 +15,9 @@ type sttsT struct {
 	loads  [3]float64
 	procs  int
 	mem    memT
+
+	cpu1Temps []string
+	cpu2Temps []string
 }
 
 type memT struct {
@@ -25,7 +31,12 @@ type memT struct {
 }
 
 type varsT struct {
-	meminfoFD *os.File
+	meminfoFd *os.File
+
+	cpu1TempHwmon string
+	cpu2TempHwmon string
+	cpu1TempFds   []*os.File
+	cpu2TempFds   []*os.File
 }
 
 type argsT struct {
@@ -41,27 +52,68 @@ func init() {
 func main() {
 	flag.Parse()
 
-	var st sttsT
 	var vars varsT
-
 	getVars(&vars)
+
+	var st sttsT
 	getSysinfo(&st, &vars)
-	prettyPrint(st)
+	readHwmon(&st, &vars)
+
+	prettyPrint(st, vars)
 
 	if *args.bench {
 		doBench(&st, &vars)
 	}
 
-	vars.meminfoFD.Close()
+	vars.meminfoFd.Close()
+	for _, fd := range vars.cpu1TempFds {
+		fd.Close()
+	}
+	for _, fd := range vars.cpu2TempFds {
+		fd.Close()
+	}
 }
 
 func getVars(vars *varsT) {
 	var err error
-	vars.meminfoFD, err = os.Open("/proc/meminfo")
+	vars.meminfoFd, err = os.Open("/proc/meminfo")
 	errExit(err)
+
+	hwmonDetect(vars)
+	vars.cpu1TempFds = openHwmon(vars.cpu1TempHwmon, "temp.*_input")
+	vars.cpu2TempFds = openHwmon(vars.cpu2TempHwmon, "temp.*_input")
 }
 
-func prettyPrint(st sttsT) {
+func openHwmon(hwmonDir string, ex string) []*os.File {
+	var fds []*os.File
+
+	re := regexp.MustCompile(ex)
+
+	hwmonFiles, err := os.ReadDir(hwmonDir)
+	if err != nil {
+		return fds
+	}
+
+	for _, hwmonFile := range hwmonFiles {
+		if !re.MatchString(hwmonFile.Name()) {
+			continue
+		}
+
+		file := fp.Join(hwmonDir, hwmonFile.Name())
+		fmt.Println(file)
+
+		fd, err := os.Open(file)
+		if err != nil {
+			continue
+		}
+
+		fds = append(fds, fd)
+	}
+
+	return fds
+}
+
+func prettyPrint(st sttsT, vars varsT) {
 	upDays := int(st.uptime.Hours() / 24)
 	upHours := int(st.uptime.Hours()) % 24
 	fmt.Printf("%-16s%dd %dh\n\n", "uptime", upDays, upHours)
@@ -82,6 +134,11 @@ func prettyPrint(st sttsT) {
 	fmt.Printf("%-16s%5d\n", "buff/cache",
 		(st.mem.buffer+st.mem.cache)/MB)
 	fmt.Printf("%-16s%5d\n\n", "available", st.mem.avail/MB)
+
+	fmt.Printf("%-16s %s\n", "cpu1 temp hwmon", vars.cpu1TempHwmon)
+	fmt.Printf("%-16s %s\n", "cpu2 temp hwmon", vars.cpu2TempHwmon)
+	fmt.Printf("%-16s %s\n", "cpu1 temp", st.cpu1Temps)
+	fmt.Printf("%-16s %s\n", "cpu2 temp", st.cpu2Temps)
 }
 
 func errExit(err error) {
