@@ -11,13 +11,19 @@ import (
 	str "strings"
 )
 
-func readHwmon(st *sttsT, vars *varsT) {
+func readCpuTemps(st *sttsT, vars *varsT) {
 	for _, fd := range vars.cpu1TempFds {
 		st.cpu1Temps = append(st.cpu1Temps, readTemp(fd))
 	}
 
 	for _, fd := range vars.cpu2TempFds {
 		st.cpu2Temps = append(st.cpu2Temps, readTemp(fd))
+	}
+}
+
+func readDriveTemps(st *sttsT, vars *varsT) {
+	for _, fd := range vars.driveTempFds {
+		st.driveTemps = append(st.driveTemps, readTemp(fd))
 	}
 }
 
@@ -59,8 +65,10 @@ func hwmonDetect(vars *varsT) {
 			} else {
 				vars.cpu2TempHwmon = hwmonName
 			}
+		case "drivetemp":
+			vars.driveTempHwmons = append(vars.driveTempHwmons,
+				hwmonName)
 		}
-		fmt.Println(file, name)
 	}
 
 	sortCpuTempHwmon(vars)

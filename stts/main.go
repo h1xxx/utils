@@ -16,8 +16,9 @@ type sttsT struct {
 	procs  int
 	mem    memT
 
-	cpu1Temps []string
-	cpu2Temps []string
+	cpu1Temps  []string
+	cpu2Temps  []string
+	driveTemps []string
 }
 
 type memT struct {
@@ -37,6 +38,9 @@ type varsT struct {
 	cpu2TempHwmon string
 	cpu1TempFds   []*os.File
 	cpu2TempFds   []*os.File
+
+	driveTempHwmons []string
+	driveTempFds    []*os.File
 }
 
 type argsT struct {
@@ -57,7 +61,8 @@ func main() {
 
 	var st sttsT
 	getSysinfo(&st, &vars)
-	readHwmon(&st, &vars)
+	readCpuTemps(&st, &vars)
+	readDriveTemps(&st, &vars)
 
 	prettyPrint(st, vars)
 
@@ -72,6 +77,9 @@ func main() {
 	for _, fd := range vars.cpu2TempFds {
 		fd.Close()
 	}
+	for _, fd := range vars.driveTempFds {
+		fd.Close()
+	}
 }
 
 func getVars(vars *varsT) {
@@ -82,6 +90,11 @@ func getVars(vars *varsT) {
 	hwmonDetect(vars)
 	vars.cpu1TempFds = openHwmon(vars.cpu1TempHwmon, "temp.*_input")
 	vars.cpu2TempFds = openHwmon(vars.cpu2TempHwmon, "temp.*_input")
+
+	for _, hwmon := range vars.driveTempHwmons {
+		vars.driveTempFds = append(vars.driveTempFds,
+			openHwmon(hwmon, "temp.*_input")...)
+	}
 }
 
 func openHwmon(hwmonDir string, ex string) []*os.File {
@@ -135,10 +148,13 @@ func prettyPrint(st sttsT, vars varsT) {
 		(st.mem.buffer+st.mem.cache)/MB)
 	fmt.Printf("%-16s%5d\n\n", "available", st.mem.avail/MB)
 
+	fmt.Printf("%-16s %s\n", "cpu1 temps", st.cpu1Temps)
+	fmt.Printf("%-16s %s\n\n", "cpu2 temps", st.cpu2Temps)
+	fmt.Printf("%-16s %s\n\n", "drive temps", st.driveTemps)
+
 	fmt.Printf("%-16s %s\n", "cpu1 temp hwmon", vars.cpu1TempHwmon)
 	fmt.Printf("%-16s %s\n", "cpu2 temp hwmon", vars.cpu2TempHwmon)
-	fmt.Printf("%-16s %s\n", "cpu1 temp", st.cpu1Temps)
-	fmt.Printf("%-16s %s\n", "cpu2 temp", st.cpu2Temps)
+	fmt.Printf("%-16s %s\n", "drive temp hwmons", vars.driveTempHwmons)
 }
 
 func errExit(err error) {
