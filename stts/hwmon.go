@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -27,10 +26,15 @@ func readDriveTemps(st *sttsT, vars *varsT) {
 	}
 }
 
+func readMoboTemps(st *sttsT, vars *varsT) {
+	for _, fd := range vars.moboTempFds {
+		st.moboTemps = append(st.moboTemps, readTemp(fd))
+	}
+}
+
 func readTemp(fd *os.File) string {
 	var tempBin [2]byte
 	_, err := io.ReadFull(fd, tempBin[:])
-	fmt.Println(tempBin)
 	if err != nil {
 		fd.Seek(0, 0)
 		return "00"
@@ -38,7 +42,12 @@ func readTemp(fd *os.File) string {
 
 	fd.Seek(0, 0)
 
-	return string(tempBin[:])
+	temp := string(tempBin[:])
+	if temp == "10" || temp == "11" {
+		temp = ">100"
+	}
+
+	return temp
 }
 
 func hwmonDetect(vars *varsT) {
@@ -67,6 +76,9 @@ func hwmonDetect(vars *varsT) {
 			}
 		case "drivetemp":
 			vars.driveTempHwmons = append(vars.driveTempHwmons,
+				hwmonName)
+		case "acpitz":
+			vars.moboTempHwmons = append(vars.moboTempHwmons,
 				hwmonName)
 		}
 	}

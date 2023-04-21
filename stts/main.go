@@ -19,6 +19,7 @@ type sttsT struct {
 	cpu1Temps  []string
 	cpu2Temps  []string
 	driveTemps []string
+	moboTemps  []string
 }
 
 type memT struct {
@@ -41,6 +42,9 @@ type varsT struct {
 
 	driveTempHwmons []string
 	driveTempFds    []*os.File
+
+	moboTempHwmons []string
+	moboTempFds    []*os.File
 }
 
 type argsT struct {
@@ -63,6 +67,7 @@ func main() {
 	getSysinfo(&st, &vars)
 	readCpuTemps(&st, &vars)
 	readDriveTemps(&st, &vars)
+	readMoboTemps(&st, &vars)
 
 	prettyPrint(st, vars)
 
@@ -80,6 +85,9 @@ func main() {
 	for _, fd := range vars.driveTempFds {
 		fd.Close()
 	}
+	for _, fd := range vars.moboTempFds {
+		fd.Close()
+	}
 }
 
 func getVars(vars *varsT) {
@@ -93,6 +101,11 @@ func getVars(vars *varsT) {
 
 	for _, hwmon := range vars.driveTempHwmons {
 		vars.driveTempFds = append(vars.driveTempFds,
+			openHwmon(hwmon, "temp.*_input")...)
+	}
+
+	for _, hwmon := range vars.moboTempHwmons {
+		vars.moboTempFds = append(vars.moboTempFds,
 			openHwmon(hwmon, "temp.*_input")...)
 	}
 }
@@ -113,7 +126,6 @@ func openHwmon(hwmonDir string, ex string) []*os.File {
 		}
 
 		file := fp.Join(hwmonDir, hwmonFile.Name())
-		fmt.Println(file)
 
 		fd, err := os.Open(file)
 		if err != nil {
@@ -149,12 +161,14 @@ func prettyPrint(st sttsT, vars varsT) {
 	fmt.Printf("%-16s%5d\n\n", "available", st.mem.avail/MB)
 
 	fmt.Printf("%-16s %s\n", "cpu1 temps", st.cpu1Temps)
-	fmt.Printf("%-16s %s\n\n", "cpu2 temps", st.cpu2Temps)
-	fmt.Printf("%-16s %s\n\n", "drive temps", st.driveTemps)
+	fmt.Printf("%-16s %s\n", "cpu2 temps", st.cpu2Temps)
+	fmt.Printf("%-16s %s\n", "drive temps", st.driveTemps)
+	fmt.Printf("%-16s %s\n\n", "mobo temps", st.moboTemps)
 
 	fmt.Printf("%-16s %s\n", "cpu1 temp hwmon", vars.cpu1TempHwmon)
 	fmt.Printf("%-16s %s\n", "cpu2 temp hwmon", vars.cpu2TempHwmon)
 	fmt.Printf("%-16s %s\n", "drive temp hwmons", vars.driveTempHwmons)
+	fmt.Printf("%-16s %s\n", "mobo temp hwmons", vars.moboTempHwmons)
 }
 
 func errExit(err error) {
