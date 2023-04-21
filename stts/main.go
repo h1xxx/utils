@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -63,7 +62,7 @@ func main() {
 func getVars(vars *varsT) {
 	var err error
 	vars.meminfoFD, err = os.Open("/proc/meminfo")
-	errExit(err, "can't open /proc/meminfo")
+	errExit(err)
 }
 
 func getSysinfo(st *sttsT, vars *varsT) {
@@ -98,22 +97,22 @@ func readMeminfo(st *sttsT, vars *varsT) {
 		case 3:
 			key, val := parseMeminfoLine(scanner.Text())
 			if key != "MemAvailable" {
-				msg := "wrong /proc/meminfo line number: " + key
-				errExit(errors.New(""), msg)
+				msg := "wrong /proc/meminfo line number: %s"
+				errExit(fmt.Errorf(msg, key))
 			}
 			st.mem.avail = val * 1024
 		case 5:
 			key, val := parseMeminfoLine(scanner.Text())
 			if key != "Cached" {
-				msg := "wrong /proc/meminfo line number: " + key
-				errExit(errors.New(""), msg)
+				msg := "wrong /proc/meminfo line number: %s"
+				errExit(fmt.Errorf(msg, key))
 			}
 			st.mem.cache = val * 1024
 		case 24:
 			key, val := parseMeminfoLine(scanner.Text())
 			if key != "SReclaimable" {
-				msg := "wrong /proc/meminfo line number: " + key
-				errExit(errors.New(""), msg)
+				msg := "wrong /proc/meminfo line number: %s"
+				errExit(fmt.Errorf(msg, key))
 			}
 			st.mem.cache += val * 1024
 		case 25:
@@ -126,20 +125,21 @@ func readMeminfo(st *sttsT, vars *varsT) {
 func parseMeminfoLine(line string) (string, int) {
 	fields := strings.Split(line, ":")
 	if len(fields) != 2 {
-		err := errors.New("")
-		errExit(err, "can't parse /proc/meminfo line: "+line)
+		errExit(fmt.Errorf("can't parse /proc/meminfo line: %s", line))
 	}
 	key := strings.TrimSpace(fields[0])
 	valStr := strings.TrimSpace(fields[1])
 	valStr = strings.TrimSuffix(valStr, " kB")
 	val, err := strconv.ParseInt(valStr, 10, 64)
-	errExit(err, "can't parse /proc/meminfo line: "+line)
+	if err != nil {
+		msg := "can't parse /proc/meminfo line: %s\nerror: %h"
+		errExit(fmt.Errorf(msg, line, err))
+	}
 
 	return key, int(val)
 }
 
 func prettyPrint(st sttsT) {
-
 	upDays := int(st.uptime.Hours() / 24)
 	upHours := int(st.uptime.Hours()) % 24
 	fmt.Printf("%-16s%dd %dh\n\n", "uptime", upDays, upHours)
@@ -162,10 +162,9 @@ func prettyPrint(st sttsT) {
 	fmt.Printf("%-16s%5d\n\n", "available", st.mem.avail/MB)
 }
 
-func errExit(err error, msg string) {
+func errExit(err error) {
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "\n  error: "+msg)
-		fmt.Fprintf(os.Stderr, "  %s\n", err)
+		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
 }
