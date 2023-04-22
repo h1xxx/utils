@@ -34,47 +34,50 @@ func getSysinfo(st *sttsT, vars *varsT) {
 }
 
 func readMeminfo(st *sttsT, vars *varsT) {
-	scanner := bufio.NewScanner(vars.meminfoFd)
-	lineID := 1
-	for scanner.Scan() {
-		switch lineID {
+	rd := bufio.NewReaderSize(vars.meminfoFd, 32)
+	lineId := 1
+	for {
+		lineBin, _, err := rd.ReadLine()
+		if err != nil {
+			break
+		}
+
+		switch lineId {
 		case 3:
-			key, val := parseMeminfoLine(scanner.Text())
-			if key != "MemAvailable" {
-				msg := "wrong /proc/meminfo line number: %s"
-				errExit(fmt.Errorf(msg, key))
+			key, val := parseMeminfoLine(string(lineBin))
+			if key != "MemAvailable:" {
+				msg := "wrong /proc/meminfo line number %d: %s"
+				errExit(fmt.Errorf(msg, lineId, key))
 			}
 			st.mem.avail = val * 1024
 		case 5:
-			key, val := parseMeminfoLine(scanner.Text())
-			if key != "Cached" {
-				msg := "wrong /proc/meminfo line number: %s"
-				errExit(fmt.Errorf(msg, key))
+			key, val := parseMeminfoLine(string(lineBin))
+			if key != "Cached:" {
+				msg := "wrong /proc/meminfo line number %d: %s"
+				errExit(fmt.Errorf(msg, lineId, key))
 			}
 			st.mem.cache = val * 1024
 		case 24:
-			key, val := parseMeminfoLine(scanner.Text())
-			if key != "SReclaimable" {
-				msg := "wrong /proc/meminfo line number: %s"
-				errExit(fmt.Errorf(msg, key))
+			key, val := parseMeminfoLine(string(lineBin))
+			if key != "SReclaimable:" {
+				msg := "wrong /proc/meminfo line number %d: %s"
+				errExit(fmt.Errorf(msg, lineId, key))
 			}
 			st.mem.cache += val * 1024
 		case 25:
 			break
 		}
-		lineID++
+		lineId++
 	}
 }
 
 func parseMeminfoLine(line string) (string, int) {
-	fields := strings.Split(line, ":")
-	if len(fields) != 2 {
-		errExit(fmt.Errorf("can't parse /proc/meminfo line: %s", line))
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return line, 0
 	}
-	key := strings.TrimSpace(fields[0])
-	valStr := strings.TrimSpace(fields[1])
-	valStr = strings.TrimSuffix(valStr, " kB")
-	val, err := strconv.ParseInt(valStr, 10, 64)
+	key := fields[0]
+	val, err := strconv.ParseInt(fields[1], 10, 64)
 	if err != nil {
 		msg := "can't parse /proc/meminfo line: %s\nerror: %h"
 		errExit(fmt.Errorf(msg, line, err))
