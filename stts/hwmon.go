@@ -1,7 +1,7 @@
 package main
 
 import (
-	"io"
+	"bufio"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -33,14 +33,12 @@ func readMoboTemps(st *sttsT, vars *varsT) {
 }
 
 func readTemp(fd *os.File) string {
+	rd := bufio.NewReaderSize(fd, 2)
 	var tempBin [2]byte
-	_, err := io.ReadFull(fd, tempBin[:])
+	_, err := rd.Read(tempBin[:])
 	if err != nil {
-		fd.Seek(0, 0)
 		return "00"
 	}
-
-	fd.Seek(0, 0)
 
 	temp := string(tempBin[:])
 	if temp == "10" || temp == "11" {
