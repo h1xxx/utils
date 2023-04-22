@@ -1,3 +1,3 @@
 all:
 	mkdir -p bin
-	CGO_ENABLED=0 go build -o bin/stts stts/*.go
+	cd stts && CGO_ENABLED=0 go build -o ../bin/stts 

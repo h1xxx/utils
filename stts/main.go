@@ -9,6 +9,8 @@ import (
 
 	fp "path/filepath"
 	str "strings"
+
+	"github.com/mdlayher/wifi"
 )
 
 type sttsT struct {
@@ -21,6 +23,8 @@ type sttsT struct {
 	cpu2Temps  []string
 	driveTemps []string
 	moboTemps  []string
+
+	ssid string
 }
 
 type memT struct {
@@ -51,6 +55,9 @@ type varsT struct {
 
 	miscHwmonNames []string
 	miscI2cNames   []string
+
+	wifiClient *wifi.Client
+	wifiIface  *wifi.Interface
 }
 
 type argsT struct {
@@ -74,6 +81,7 @@ func main() {
 	readCpuTemps(&st, &vars)
 	readDriveTemps(&st, &vars)
 	readMoboTemps(&st, &vars)
+	getWifiInfo(&st, &vars)
 
 	prettyPrint(st, vars)
 
@@ -94,6 +102,10 @@ func main() {
 	for _, fd := range vars.moboTempFds {
 		fd.Close()
 	}
+
+	if vars.wifiClient != nil {
+		vars.wifiClient.Close()
+	}
 }
 
 func getVars(vars *varsT) {
@@ -103,6 +115,7 @@ func getVars(vars *varsT) {
 
 	hwmonDetect(vars)
 	i2cDetect(vars)
+	detectWlan(vars)
 
 	vars.cpu1TempFds = openHwmon(vars.cpu1TempHwmon, "temp.*_input")
 	vars.cpu2TempFds = openHwmon(vars.cpu2TempHwmon, "temp.*_input")
@@ -202,6 +215,11 @@ func prettyPrint(st sttsT, vars varsT) {
 		str.Join(vars.miscHwmonNames, "\n    "))
 	fmt.Printf("misc i2c names:\n    %s\n",
 		str.Join(vars.miscI2cNames, "\n    "))
+
+	if vars.wifiClient != nil {
+		fmt.Printf("%-16s %s\n", "wifi iface:", vars.wifiIface.Name)
+		fmt.Printf("%-16s %s\n", "ssid:", st.ssid)
+	}
 }
 
 func errExit(err error) {

@@ -15,6 +15,11 @@ func doBench(st *sttsT, vars *varsT) {
 
 		for time.Since(start).Seconds() < 1 {
 			getSysinfo(st, vars)
+			readCpuTemps(st, vars)
+			readDriveTemps(st, vars)
+			readMoboTemps(st, vars)
+			getWifiInfo(st, vars)
+
 			runCount++
 		}
 
