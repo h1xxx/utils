@@ -24,7 +24,8 @@ type sttsT struct {
 	driveTemps []string
 	moboTemps  []string
 
-	ssid string
+	wifiBss  *wifi.BSS
+	wifiInfo *wifi.StationInfo
 }
 
 type memT struct {
@@ -218,7 +219,8 @@ func prettyPrint(st sttsT, vars varsT) {
 
 	if vars.wifiClient != nil {
 		fmt.Printf("%-16s %s\n", "wifi iface:", vars.wifiIface.Name)
-		fmt.Printf("%-16s %s\n", "ssid:", st.ssid)
+		fmt.Printf("%-16s %s\n", "ssid:", st.wifiBss.SSID)
+		fmt.Printf("%-16s %d\n", "wifi signal:", st.wifiInfo.Signal)
 	}
 }
 

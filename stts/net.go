@@ -31,5 +31,10 @@ func getWifiInfo(st *sttsT, vars *varsT) {
 	}
 
 	bss, _ := vars.wifiClient.BSS(vars.wifiIface)
-	st.ssid = bss.SSID
+	infos, _ := vars.wifiClient.StationInfo(vars.wifiIface)
+	st.wifiBss = bss
+	for _, info := range infos {
+		st.wifiInfo = info
+		break
+	}
 }
