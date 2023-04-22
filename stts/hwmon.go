@@ -80,10 +80,42 @@ func hwmonDetect(vars *varsT) {
 		case "acpitz":
 			vars.moboTempHwmons = append(vars.moboTempHwmons,
 				hwmonName)
+		default:
+			vars.miscHwmonNames = append(vars.miscHwmonNames,
+				dir.Name()+":"+name)
 		}
 	}
 
 	sortCpuTempHwmon(vars)
+}
+
+func i2cDetect(vars *varsT) {
+	i2cDirs, err := os.ReadDir("/sys/bus/i2c/devices")
+	if err != nil {
+		return
+	}
+
+	for _, dir := range i2cDirs {
+		file := fp.Join("/sys/bus/i2c/devices", dir.Name(), "name")
+
+		nameBin, err := ioutil.ReadFile(file)
+		name, _, _ := str.Cut(string(nameBin), "\n")
+		if err != nil {
+			continue
+		}
+
+		i2cName := fp.Join("/sys/bus/i2c/devices", dir.Name())
+
+		switch name {
+		case "w83795g":
+			vars.i2cMoboTemps = append(
+				vars.i2cMoboTemps, i2cName+"/temp1_input")
+		default:
+			vars.miscI2cNames = append(vars.miscI2cNames,
+				dir.Name()+":"+name)
+
+		}
+	}
 }
 
 func sortCpuTempHwmon(vars *varsT) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	fp "path/filepath"
+	str "strings"
 )
 
 type sttsT struct {
@@ -45,6 +46,11 @@ type varsT struct {
 
 	moboTempHwmons []string
 	moboTempFds    []*os.File
+
+	i2cMoboTemps []string
+
+	miscHwmonNames []string
+	miscI2cNames   []string
 }
 
 type argsT struct {
@@ -96,6 +102,8 @@ func getVars(vars *varsT) {
 	errExit(err)
 
 	hwmonDetect(vars)
+	i2cDetect(vars)
+
 	vars.cpu1TempFds = openHwmon(vars.cpu1TempHwmon, "temp.*_input")
 	vars.cpu2TempFds = openHwmon(vars.cpu2TempHwmon, "temp.*_input")
 
@@ -108,6 +116,9 @@ func getVars(vars *varsT) {
 		vars.moboTempFds = append(vars.moboTempFds,
 			openHwmon(hwmon, "temp.*_input")...)
 	}
+
+	vars.moboTempFds = append(vars.moboTempFds,
+		openFiles(vars.i2cMoboTemps)...)
 }
 
 func openHwmon(hwmonDir string, ex string) []*os.File {
@@ -127,6 +138,21 @@ func openHwmon(hwmonDir string, ex string) []*os.File {
 
 		file := fp.Join(hwmonDir, hwmonFile.Name())
 
+		fd, err := os.Open(file)
+		if err != nil {
+			continue
+		}
+
+		fds = append(fds, fd)
+	}
+
+	return fds
+}
+
+func openFiles(files []string) []*os.File {
+	var fds []*os.File
+
+	for _, file := range files {
 		fd, err := os.Open(file)
 		if err != nil {
 			continue
@@ -169,6 +195,13 @@ func prettyPrint(st sttsT, vars varsT) {
 	fmt.Printf("%-16s %s\n", "cpu2 temp hwmon", vars.cpu2TempHwmon)
 	fmt.Printf("%-16s %s\n", "drive temp hwmons", vars.driveTempHwmons)
 	fmt.Printf("%-16s %s\n", "mobo temp hwmons", vars.moboTempHwmons)
+
+	fmt.Printf("%-16s %s\n", "i2c mobo temp sensors:", vars.i2cMoboTemps)
+
+	fmt.Printf("misc hwmon names:\n    %s\n",
+		str.Join(vars.miscHwmonNames, "\n    "))
+	fmt.Printf("misc i2c names:\n    %s\n",
+		str.Join(vars.miscI2cNames, "\n    "))
 }
 
 func errExit(err error) {
