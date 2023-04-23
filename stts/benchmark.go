@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func doBench(st *sttsT, vars *varsT) {
+func doBench(vars *varsT) {
 	var results []float64
 
 	for i := 0; i < 30; i++ {
@@ -14,13 +14,8 @@ func doBench(st *sttsT, vars *varsT) {
 		start := time.Now()
 
 		for time.Since(start).Seconds() < 1 {
-			getSysinfo(st, vars)
-			readCpuTemps(st, vars)
-			readDriveTemps(st, vars)
-			readMoboTemps(st, vars)
-			getWifiInfo(st, vars)
-			getBatInfo(st, vars)
-
+			var st sttsT
+			getAllInfo(&st, vars)
 			runCount++
 		}
 

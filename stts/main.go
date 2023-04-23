@@ -2,13 +2,11 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"regexp"
 	"time"
 
 	fp "path/filepath"
-	str "strings"
 
 	"github.com/mdlayher/wifi"
 )
@@ -53,9 +51,8 @@ type varsT struct {
 	driveTempFds    []*os.File
 
 	moboTempHwmons []string
+	i2cMoboTemps   []string
 	moboTempFds    []*os.File
-
-	i2cMoboTemps []string
 
 	miscHwmonNames []string
 	miscI2cNames   []string
@@ -87,56 +84,23 @@ func main() {
 	getVars(&vars)
 
 	var st sttsT
-	getSysinfo(&st, &vars)
-	readCpuTemps(&st, &vars)
-	readDriveTemps(&st, &vars)
-	readMoboTemps(&st, &vars)
-	getWifiInfo(&st, &vars)
-	getBatInfo(&st, &vars)
-
+	getAllInfo(&st, &vars)
 	prettyPrint(st, vars)
 
 	if *args.bench {
-		doBench(&st, &vars)
+		doBench(&vars)
 	}
 
-	vars.meminfoFd.Close()
-	for _, fd := range vars.cpu1TempFds {
-		fd.Close()
-	}
-	for _, fd := range vars.cpu2TempFds {
-		fd.Close()
-	}
-	for _, fd := range vars.driveTempFds {
-		fd.Close()
-	}
-	for _, fd := range vars.moboTempFds {
-		fd.Close()
-	}
+	closeFiles(&vars)
+}
 
-	if vars.wifiClient != nil {
-		vars.wifiClient.Close()
-	}
-
-	if vars.batCapacityFd != nil {
-		vars.batCapacityFd.Close()
-	}
-
-	if vars.batEnergyFd != nil {
-		vars.batEnergyFd.Close()
-	}
-
-	if vars.batEnergyFullFd != nil {
-		vars.batEnergyFullFd.Close()
-	}
-
-	if vars.batPowerFd != nil {
-		vars.batPowerFd.Close()
-	}
-
-	if vars.batStatusFd != nil {
-		vars.batStatusFd.Close()
-	}
+func getAllInfo(st *sttsT, vars *varsT) {
+	getSysinfo(st, vars)
+	readCpuTemps(st, vars)
+	readDriveTemps(st, vars)
+	readMoboTemps(st, vars)
+	getWifiInfo(st, vars)
+	getBatInfo(st, vars)
 }
 
 func getVars(vars *varsT) {
@@ -209,62 +173,46 @@ func openFiles(files []string) []*os.File {
 	return fds
 }
 
-func prettyPrint(st sttsT, vars varsT) {
-	upDays := int(st.uptime.Hours() / 24)
-	upHours := int(st.uptime.Hours()) % 24
-	fmt.Printf("%-16s%dd %dh\n\n", "uptime", upDays, upHours)
+func closeFiles(vars *varsT) {
+	vars.meminfoFd.Close()
 
-	fmt.Printf("%-16s%.2f\n", "load 1m", st.loads[0])
-	fmt.Printf("%-16s%.2f\n", "load 5m", st.loads[1])
-	fmt.Printf("%-16s%.2f\n\n", "load 15m", st.loads[2])
+	for _, fd := range vars.cpu1TempFds {
+		fd.Close()
+	}
 
-	fmt.Printf("%-16s%d\n\n", "process count", st.procs)
+	for _, fd := range vars.cpu2TempFds {
+		fd.Close()
+	}
 
-	MB := 1024 * 1024
-	fmt.Printf("%-16s%5d\n", "total mem", st.mem.total/MB)
-	fmt.Printf("%-16s%5d\n", "used mem", st.mem.used/MB)
-	fmt.Printf("%-16s%5d\n", "free mem", st.mem.free/MB)
-	fmt.Printf("%-16s%5d\n", "shared mem", st.mem.shared/MB)
-	fmt.Printf("%-16s%5d\n", "buffer", st.mem.buffer/MB)
-	fmt.Printf("%-16s%5d\n", "cache", st.mem.cache/MB)
-	fmt.Printf("%-16s%5d\n", "buff/cache",
-		(st.mem.buffer+st.mem.cache)/MB)
-	fmt.Printf("%-16s%5d\n\n", "available", st.mem.avail/MB)
+	for _, fd := range vars.driveTempFds {
+		fd.Close()
+	}
 
-	fmt.Printf("%-16s %s\n", "cpu1 temps", st.cpu1Temps)
-	fmt.Printf("%-16s %s\n", "cpu2 temps", st.cpu2Temps)
-	fmt.Printf("%-16s %s\n", "drive temps", st.driveTemps)
-	fmt.Printf("%-16s %s\n\n", "mobo temps", st.moboTemps)
-
-	fmt.Printf("%-16s %s\n", "cpu1 temp hwmon", vars.cpu1TempHwmon)
-	fmt.Printf("%-16s %s\n", "cpu2 temp hwmon", vars.cpu2TempHwmon)
-	fmt.Printf("%-16s %s\n", "drive temp hwmons", vars.driveTempHwmons)
-	fmt.Printf("%-16s %s\n", "mobo temp hwmons", vars.moboTempHwmons)
-
-	fmt.Printf("%-16s %s\n", "i2c mobo temp sensors:", vars.i2cMoboTemps)
-
-	fmt.Printf("misc hwmon names:\n    %s\n",
-		str.Join(vars.miscHwmonNames, "\n    "))
-	fmt.Printf("misc i2c names:\n    %s\n",
-		str.Join(vars.miscI2cNames, "\n    "))
+	for _, fd := range vars.moboTempFds {
+		fd.Close()
+	}
 
 	if vars.wifiClient != nil {
-		fmt.Printf("%-16s %s\n", "wifi iface:", vars.wifiIface.Name)
-		fmt.Printf("%-16s %s\n", "ssid:", st.wifiBss.SSID)
-		fmt.Printf("%-16s %d\n", "wifi signal:", st.wifiInfo.Signal)
+		vars.wifiClient.Close()
 	}
 
 	if vars.batCapacityFd != nil {
-		fmt.Printf("%-16s %s%%\n", "battery level:", st.batLevel)
+		vars.batCapacityFd.Close()
 	}
-	if vars.batPowerFd != nil {
-		fmt.Printf("%-16s %s\n", "battery time left:", st.batTimeLeft)
-	}
-}
 
-func errExit(err error) {
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
-		os.Exit(1)
+	if vars.batEnergyFd != nil {
+		vars.batEnergyFd.Close()
+	}
+
+	if vars.batEnergyFullFd != nil {
+		vars.batEnergyFullFd.Close()
+	}
+
+	if vars.batPowerFd != nil {
+		vars.batPowerFd.Close()
+	}
+
+	if vars.batStatusFd != nil {
+		vars.batStatusFd.Close()
 	}
 }
