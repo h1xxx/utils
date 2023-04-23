@@ -17,6 +17,11 @@ type sttsT struct {
 	procs  int
 	mem    memT
 
+	cpu1Temp  string
+	cpu2Temp  string
+	driveTemp string
+	moboTemp  string
+
 	cpu1Temps  []string
 	cpu2Temps  []string
 	driveTemps []string
@@ -40,6 +45,8 @@ type memT struct {
 }
 
 type varsT struct {
+	debug bool
+
 	meminfoFd *os.File
 
 	cpu1TempHwmon string
@@ -76,6 +83,7 @@ func main() {
 	flag.Parse()
 
 	var vars varsT
+	vars.debug = debug
 	getVars(&vars)
 
 	var st sttsT

@@ -32,10 +32,10 @@ func printAll(st *sttsT, vars *varsT) {
 	prInt("available", st.mem.avail/mb)
 	sep()
 
-	prStr("cpu1 temps", str.Join(st.cpu1Temps, ","))
-	prStr("cpu2 temps", str.Join(st.cpu2Temps, ","))
-	prStr("drive temps", str.Join(st.driveTemps, ","))
-	prStr("mobo temps", str.Join(st.moboTemps, ","))
+	prStr("cpu1 temp", st.cpu1Temp)
+	prStr("cpu2 temp", st.cpu2Temp)
+	prStr("drive temp", st.driveTemp)
+	prStr("mobo temp", st.moboTemp)
 	sep()
 
 	if vars.wifiClient != nil {
@@ -58,6 +58,12 @@ func printDebug(st *sttsT, vars *varsT) {
 	sep()
 	prStr("debug info", "")
 	prStr("==========", "")
+	sep()
+
+	prStr("cpu1 temps", str.Join(st.cpu1Temps, ","))
+	prStr("cpu2 temps", str.Join(st.cpu2Temps, ","))
+	prStr("drive temps", str.Join(st.driveTemps, ","))
+	prStr("mobo temps", str.Join(st.moboTemps, ","))
 	sep()
 
 	prStr("cpu1 temp hwmon  ", vars.cpu1TempHwmon)

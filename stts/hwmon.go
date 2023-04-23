@@ -12,23 +12,47 @@ import (
 
 func readCpuTemps(st *sttsT, vars *varsT) {
 	for _, fd := range vars.cpu1TempFds {
-		st.cpu1Temps = append(st.cpu1Temps, readTemp(fd))
+		temp := readTemp(fd)
+		if temp > st.cpu1Temp {
+			st.cpu1Temp = temp
+		}
+		if vars.debug {
+			st.cpu1Temps = append(st.cpu1Temps, temp)
+		}
 	}
 
 	for _, fd := range vars.cpu2TempFds {
-		st.cpu2Temps = append(st.cpu2Temps, readTemp(fd))
+		temp := readTemp(fd)
+		if temp > st.cpu2Temp {
+			st.cpu2Temp = temp
+		}
+		if vars.debug {
+			st.cpu2Temps = append(st.cpu2Temps, temp)
+		}
 	}
 }
 
 func readDriveTemps(st *sttsT, vars *varsT) {
 	for _, fd := range vars.driveTempFds {
-		st.driveTemps = append(st.driveTemps, readTemp(fd))
+		temp := readTemp(fd)
+		if temp > st.driveTemp {
+			st.driveTemp = temp
+		}
+		if vars.debug {
+			st.driveTemps = append(st.driveTemps, temp)
+		}
 	}
 }
 
 func readMoboTemps(st *sttsT, vars *varsT) {
 	for _, fd := range vars.moboTempFds {
-		st.moboTemps = append(st.moboTemps, readTemp(fd))
+		temp := readTemp(fd)
+		if temp > st.moboTemp {
+			st.moboTemp = temp
+		}
+		if vars.debug {
+			st.moboTemps = append(st.moboTemps, temp)
+		}
 	}
 }
 
