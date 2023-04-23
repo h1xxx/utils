@@ -41,8 +41,8 @@ func readTemp(fd *os.File) string {
 	}
 
 	temp := string(tempBin[:])
-	if temp == "10" || temp == "11" {
-		temp = ">100"
+	if temp == "10" || temp == "11" || len(temp) == 1 {
+		temp = "99"
 	}
 
 	return temp

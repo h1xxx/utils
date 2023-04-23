@@ -67,17 +67,12 @@ type varsT struct {
 	batStatusFd     *os.File
 }
 
-type argsT struct {
-	bench *bool
-}
-
-var args argsT
-
-func init() {
-	args.bench = flag.Bool("b", false, "perform a benchmark")
-}
-
 func main() {
+	var bench, debug bool
+
+	flag.BoolVar(&bench, "b", false, "perform a benchmark")
+	flag.BoolVar(&debug, "d", false, "add debugging info")
+
 	flag.Parse()
 
 	var vars varsT
@@ -85,9 +80,13 @@ func main() {
 
 	var st sttsT
 	getAllInfo(&st, &vars)
-	prettyPrint(st, vars)
+	printAll(&st, &vars)
 
-	if *args.bench {
+	if debug {
+		printDebug(&st, &vars)
+	}
+
+	if bench {
 		doBench(&vars)
 	}
 

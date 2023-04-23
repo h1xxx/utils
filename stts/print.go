@@ -6,55 +6,91 @@ import (
 	str "strings"
 )
 
-func prettyPrint(st sttsT, vars varsT) {
+func printAll(st *sttsT, vars *varsT) {
 	upDays := int(st.uptime.Hours() / 24)
 	upHours := int(st.uptime.Hours()) % 24
-	fmt.Printf("%-16s%dd %dh\n\n", "uptime", upDays, upHours)
+	up := fmt.Sprintf("%dd%dh", upDays, upHours)
+	prStr("uptime", up)
+	sep()
 
-	fmt.Printf("%-16s%.2f\n", "load 1m", st.loads[0])
-	fmt.Printf("%-16s%.2f\n", "load 5m", st.loads[1])
-	fmt.Printf("%-16s%.2f\n\n", "load 15m", st.loads[2])
+	prFloat("load 1m", st.loads[0])
+	prFloat("load 5m", st.loads[1])
+	prFloat("load 15m", st.loads[2])
+	sep()
 
-	fmt.Printf("%-16s%d\n\n", "process count", st.procs)
+	prInt("process count", st.procs)
+	sep()
 
-	MB := 1024 * 1024
-	fmt.Printf("%-16s%5d\n", "total mem", st.mem.total/MB)
-	fmt.Printf("%-16s%5d\n", "used mem", st.mem.used/MB)
-	fmt.Printf("%-16s%5d\n", "free mem", st.mem.free/MB)
-	fmt.Printf("%-16s%5d\n", "shared mem", st.mem.shared/MB)
-	fmt.Printf("%-16s%5d\n", "buffer", st.mem.buffer/MB)
-	fmt.Printf("%-16s%5d\n", "cache", st.mem.cache/MB)
-	fmt.Printf("%-16s%5d\n", "buff/cache",
-		(st.mem.buffer+st.mem.cache)/MB)
-	fmt.Printf("%-16s%5d\n\n", "available", st.mem.avail/MB)
+	mb := 1024 * 1024
+	prInt("total mem", st.mem.total/mb)
+	prInt("used mem", st.mem.used/mb)
+	prInt("free mem", st.mem.free/mb)
+	prInt("shared mem", st.mem.shared/mb)
+	prInt("buffer", st.mem.buffer/mb)
+	prInt("cache", st.mem.cache/mb)
+	prInt("buff/cache", (st.mem.buffer+st.mem.cache)/mb)
+	prInt("available", st.mem.avail/mb)
+	sep()
 
-	fmt.Printf("%-16s %s\n", "cpu1 temps", st.cpu1Temps)
-	fmt.Printf("%-16s %s\n", "cpu2 temps", st.cpu2Temps)
-	fmt.Printf("%-16s %s\n", "drive temps", st.driveTemps)
-	fmt.Printf("%-16s %s\n\n", "mobo temps", st.moboTemps)
-
-	fmt.Printf("%-16s %s\n", "cpu1 temp hwmon", vars.cpu1TempHwmon)
-	fmt.Printf("%-16s %s\n", "cpu2 temp hwmon", vars.cpu2TempHwmon)
-	fmt.Printf("%-16s %s\n", "drive temp hwmons", vars.driveTempHwmons)
-	fmt.Printf("%-16s %s\n", "mobo temp hwmons", vars.moboTempHwmons)
-
-	fmt.Printf("%-16s %s\n", "i2c mobo temp sensors:", vars.i2cMoboTemps)
-
-	fmt.Printf("misc hwmon names:\n    %s\n",
-		str.Join(vars.miscHwmonNames, "\n    "))
-	fmt.Printf("misc i2c names:\n    %s\n",
-		str.Join(vars.miscI2cNames, "\n    "))
+	prStr("cpu1 temps", str.Join(st.cpu1Temps, ","))
+	prStr("cpu2 temps", str.Join(st.cpu2Temps, ","))
+	prStr("drive temps", str.Join(st.driveTemps, ","))
+	prStr("mobo temps", str.Join(st.moboTemps, ","))
+	sep()
 
 	if vars.wifiClient != nil {
-		fmt.Printf("%-16s %s\n", "wifi iface:", vars.wifiIface.Name)
-		fmt.Printf("%-16s %s\n", "ssid:", st.wifiBss.SSID)
-		fmt.Printf("%-16s %d\n", "wifi signal:", st.wifiInfo.Signal)
+		prStr("wifi iface", vars.wifiIface.Name)
+		prStr("ssid", st.wifiBss.SSID)
+		prInt("wifi signal", st.wifiInfo.Signal)
+		sep()
 	}
 
 	if vars.batCapacityFd != nil {
-		fmt.Printf("%-16s %s%%\n", "battery level:", st.batLevel)
+		prStr("bat level", st.batLevel)
 	}
+
 	if vars.batPowerFd != nil {
-		fmt.Printf("%-16s %s\n", "battery time left:", st.batTimeLeft)
+		prStr("bat time left", st.batTimeLeft)
 	}
+}
+
+func printDebug(st *sttsT, vars *varsT) {
+	sep()
+	prStr("debug info", "")
+	prStr("==========", "")
+	sep()
+
+	prStr("cpu1 temp hwmon  ", vars.cpu1TempHwmon)
+	prStr("cpu2 temp hwmon  ", vars.cpu2TempHwmon)
+	sep()
+
+	prSl("drive temp hwmons", vars.driveTempHwmons)
+	prSl("mobo temp hwmons", vars.moboTempHwmons)
+	prSl("i2c mobo temp sensors", vars.i2cMoboTemps)
+	prSl("misc hwmon names", vars.miscHwmonNames)
+	prSl("misc i2c names", vars.miscI2cNames)
+}
+
+func prFloat(s string, f float64) {
+	fmt.Printf("%-14s%10.2f\n", s, f)
+}
+
+func prInt(s string, i int) {
+	fmt.Printf("%-14s%10d\n", s, i)
+}
+
+func prStr(s, v string) {
+	fmt.Printf("%-14s%10s\n", s, v)
+}
+
+func prSl(s string, sl []string) {
+	if len(sl) == 0 {
+		return
+	}
+	fmt.Printf("%s\n    %s\n", s, str.Join(sl, "\n    "))
+	sep()
+}
+
+func sep() {
+	fmt.Println()
 }
