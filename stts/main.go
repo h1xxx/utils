@@ -26,6 +26,9 @@ type sttsT struct {
 
 	wifiBss  *wifi.BSS
 	wifiInfo *wifi.StationInfo
+
+	batLevel    string
+	batTimeLeft string
 }
 
 type memT struct {
@@ -59,6 +62,12 @@ type varsT struct {
 
 	wifiClient *wifi.Client
 	wifiIface  *wifi.Interface
+
+	batCapacityFd   *os.File
+	batEnergyFd     *os.File
+	batEnergyFullFd *os.File
+	batPowerFd      *os.File
+	batStatusFd     *os.File
 }
 
 type argsT struct {
@@ -83,6 +92,7 @@ func main() {
 	readDriveTemps(&st, &vars)
 	readMoboTemps(&st, &vars)
 	getWifiInfo(&st, &vars)
+	getBatInfo(&st, &vars)
 
 	prettyPrint(st, vars)
 
@@ -107,6 +117,26 @@ func main() {
 	if vars.wifiClient != nil {
 		vars.wifiClient.Close()
 	}
+
+	if vars.batCapacityFd != nil {
+		vars.batCapacityFd.Close()
+	}
+
+	if vars.batEnergyFd != nil {
+		vars.batEnergyFd.Close()
+	}
+
+	if vars.batEnergyFullFd != nil {
+		vars.batEnergyFullFd.Close()
+	}
+
+	if vars.batPowerFd != nil {
+		vars.batPowerFd.Close()
+	}
+
+	if vars.batStatusFd != nil {
+		vars.batStatusFd.Close()
+	}
 }
 
 func getVars(vars *varsT) {
@@ -117,6 +147,7 @@ func getVars(vars *varsT) {
 	hwmonDetect(vars)
 	i2cDetect(vars)
 	detectWlan(vars)
+	detectBat(vars)
 
 	vars.cpu1TempFds = openHwmon(vars.cpu1TempHwmon, "temp.*_input")
 	vars.cpu2TempFds = openHwmon(vars.cpu2TempHwmon, "temp.*_input")
@@ -221,6 +252,13 @@ func prettyPrint(st sttsT, vars varsT) {
 		fmt.Printf("%-16s %s\n", "wifi iface:", vars.wifiIface.Name)
 		fmt.Printf("%-16s %s\n", "ssid:", st.wifiBss.SSID)
 		fmt.Printf("%-16s %d\n", "wifi signal:", st.wifiInfo.Signal)
+	}
+
+	if vars.batCapacityFd != nil {
+		fmt.Printf("%-16s %s%%\n", "battery level:", st.batLevel)
+	}
+	if vars.batPowerFd != nil {
+		fmt.Printf("%-16s %s\n", "battery time left:", st.batTimeLeft)
 	}
 }
 

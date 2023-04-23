@@ -19,6 +19,7 @@ func doBench(st *sttsT, vars *varsT) {
 			readDriveTemps(st, vars)
 			readMoboTemps(st, vars)
 			getWifiInfo(st, vars)
+			getBatInfo(st, vars)
 
 			runCount++
 		}
