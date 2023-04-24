@@ -19,14 +19,20 @@ func printOneLineOnce(st *sttsT, vars *varsT) {
 	var out []string
 
 	load := fmt.Sprintf("l %.2f", st.loads[0])
-	disk := fmt.Sprintf("d %s69G", st.rootDiskFree)
 
 	var mem string
 	memUsed := float64(st.mem.used) / (1024 * 1024)
 	if memUsed > 1024 {
-		mem = fmt.Sprintf("m %.1f GB", memUsed/1024)
+		mem = fmt.Sprintf("m %.1fG", memUsed/1024)
 	} else {
-		mem = fmt.Sprintf("m %.0f MB", memUsed)
+		mem = fmt.Sprintf("m %.0fM", memUsed)
+	}
+
+	var disk string
+	if st.rootDiskFree > 1024 {
+		disk = fmt.Sprintf("d %.1fG", st.rootDiskFree/1024)
+	} else {
+		disk = fmt.Sprintf("d %.0fM", st.rootDiskFree)
 	}
 
 	var temps, sep string
@@ -100,6 +106,7 @@ func printAll(st *sttsT, vars *varsT) {
 	sep()
 
 	prInt("process count", st.procs)
+	prFloat("/ disk free", st.rootDiskFree/1024)
 	sep()
 
 	mb := 1024 * 1024

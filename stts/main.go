@@ -16,6 +16,7 @@ type sttsT struct {
 	loads  [3]float64
 	procs  int
 	mem    memT
+	rootDiskFree float64
 
 	cpu1Temp  string
 	cpu2Temp  string
@@ -27,7 +28,6 @@ type sttsT struct {
 	driveTemps []string
 	moboTemps  []string
 
-	rootDiskFree string
 
 	wifiBss  *wifi.BSS
 	wifiInfo *wifi.StationInfo
@@ -128,6 +128,7 @@ func main() {
 
 func getAllInfo(st *sttsT, vars *varsT) {
 	getSysinfo(st, vars)
+	getDiskInfo(st, vars)
 	readCpuTemps(st, vars)
 	readDriveTemps(st, vars)
 	readMoboTemps(st, vars)
