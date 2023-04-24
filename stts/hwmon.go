@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -12,7 +11,7 @@ import (
 
 func readCpuTemps(st *sttsT, vars *varsT) {
 	for _, fd := range vars.cpu1TempFds {
-		temp := readTemp(fd)
+		temp := readTemp(fd, vars)
 		if temp > st.cpu1Temp {
 			st.cpu1Temp = temp
 		}
@@ -22,7 +21,7 @@ func readCpuTemps(st *sttsT, vars *varsT) {
 	}
 
 	for _, fd := range vars.cpu2TempFds {
-		temp := readTemp(fd)
+		temp := readTemp(fd, vars)
 		if temp > st.cpu2Temp {
 			st.cpu2Temp = temp
 		}
@@ -34,7 +33,7 @@ func readCpuTemps(st *sttsT, vars *varsT) {
 
 func readDriveTemps(st *sttsT, vars *varsT) {
 	for _, fd := range vars.driveTempFds {
-		temp := readTemp(fd)
+		temp := readTemp(fd, vars)
 		if temp > st.driveTemp {
 			st.driveTemp = temp
 		}
@@ -46,7 +45,7 @@ func readDriveTemps(st *sttsT, vars *varsT) {
 
 func readMoboTemps(st *sttsT, vars *varsT) {
 	for _, fd := range vars.moboTempFds {
-		temp := readTemp(fd)
+		temp := readTemp(fd, vars)
 		if temp > st.moboTemp {
 			st.moboTemp = temp
 		}
@@ -56,10 +55,15 @@ func readMoboTemps(st *sttsT, vars *varsT) {
 	}
 }
 
-func readTemp(fd *os.File) string {
-	rd := bufio.NewReaderSize(fd, 2)
-	var tempBin [2]byte
-	_, err := rd.Read(tempBin[:])
+func readTemp(fd *os.File, vars *varsT) string {
+	tempBin := make([]byte, 2)
+	_, err := fd.Read(tempBin)
+
+	// skip for benchmarking as this poses a large i/o bottleneck
+	if !vars.bench {
+		fd.Seek(0, 0)
+	}
+
 	if err != nil {
 		return "00"
 	}

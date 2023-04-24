@@ -27,6 +27,8 @@ type sttsT struct {
 	driveTemps []string
 	moboTemps  []string
 
+	rootDiskFree string
+
 	wifiBss  *wifi.BSS
 	wifiInfo *wifi.StationInfo
 
@@ -45,7 +47,10 @@ type memT struct {
 }
 
 type varsT struct {
+	bench bool
 	debug bool
+
+	has hasT
 
 	meminfoFd *os.File
 
@@ -74,28 +79,48 @@ type varsT struct {
 	batStatusFd     *os.File
 }
 
-func main() {
-	var bench, debug bool
+type hasT struct {
+	cpu1Temp  bool
+	cpu2Temp  bool
+	driveTemp bool
+	moboTemp  bool
+	wifi      bool
+	bat       bool
+}
 
+func main() {
+	var oneLine, oneLineOnce, bench, debug bool
+
+	flag.BoolVar(&oneLine, "o", false, "print info in one line repeatedly")
+	flag.BoolVar(&oneLineOnce, "1", false, "print info in one line once")
 	flag.BoolVar(&bench, "b", false, "perform a benchmark")
 	flag.BoolVar(&debug, "d", false, "add debugging info")
 
 	flag.Parse()
 
+	var st sttsT
 	var vars varsT
+
 	vars.debug = debug
+	vars.bench = bench
 	getVars(&vars)
 
-	var st sttsT
-	getAllInfo(&st, &vars)
-	printAll(&st, &vars)
-
-	if debug {
-		printDebug(&st, &vars)
+	switch {
+	case oneLine:
+		printOneLine(&st, &vars)
+	case oneLineOnce:
+		getAllInfo(&st, &vars)
+		printOneLineOnce(&st, &vars)
+	default:
+		getAllInfo(&st, &vars)
+		printAll(&st, &vars)
+		if debug {
+			printDebug(&st, &vars)
+		}
 	}
 
 	if bench {
-		doBench(&vars)
+		doBench(&st, &vars)
 	}
 
 	closeFiles(&vars)
@@ -135,6 +160,30 @@ func getVars(vars *varsT) {
 
 	vars.moboTempFds = append(vars.moboTempFds,
 		openFiles(vars.i2cMoboTemps)...)
+
+	if len(vars.cpu1TempFds) > 0 {
+		vars.has.cpu1Temp = true
+	}
+
+	if len(vars.cpu2TempFds) > 0 {
+		vars.has.cpu2Temp = true
+	}
+
+	if len(vars.driveTempFds) > 0 {
+		vars.has.driveTemp = true
+	}
+
+	if len(vars.moboTempFds) > 0 {
+		vars.has.moboTemp = true
+	}
+
+	if vars.wifiIface != nil {
+		vars.has.wifi = true
+	}
+
+	if vars.batCapacityFd != nil {
+		vars.has.bat = true
+	}
 }
 
 func openHwmon(hwmonDir string, ex string) []*os.File {

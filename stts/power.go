@@ -56,6 +56,15 @@ func getBatInfo(st *sttsT, vars *varsT) {
 	}
 
 	st.batTimeLeft = fmt.Sprintf("%d:%2.2d", minLeft/60, minLeft%60)
+
+	// skip for benchmarking as this poses a large i/o bottleneck
+	if !vars.bench {
+		vars.batCapacityFd.Seek(0, 0)
+		vars.batEnergyFd.Seek(0, 0)
+		vars.batEnergyFullFd.Seek(0, 0)
+		vars.batPowerFd.Seek(0, 0)
+		vars.batStatusFd.Seek(0, 0)
+	}
 }
 
 func readShortString(fd *os.File) string {

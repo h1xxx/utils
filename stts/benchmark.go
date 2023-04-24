@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func doBench(vars *varsT) {
+func doBench(st *sttsT, vars *varsT) {
 	var results []float64
 
 	for i := 0; i < 30; i++ {
@@ -14,8 +14,7 @@ func doBench(vars *varsT) {
 		start := time.Now()
 
 		for time.Since(start).Seconds() < 1 {
-			var st sttsT
-			getAllInfo(&st, vars)
+			getAllInfo(st, vars)
 			runCount++
 		}
 

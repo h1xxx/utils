@@ -69,6 +69,10 @@ func readMeminfo(st *sttsT, vars *varsT) {
 		}
 		lineId++
 	}
+	// skip for benchmarking as this poses a large i/o bottleneck
+	if !vars.bench {
+		vars.meminfoFd.Seek(0, 0)
+	}
 }
 
 func parseMeminfoLine(line string) (string, int) {

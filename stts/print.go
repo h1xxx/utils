@@ -2,9 +2,90 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	str "strings"
 )
+
+func printOneLine(st *sttsT, vars *varsT) {
+	for {
+		getAllInfo(st, vars)
+		printOneLineOnce(st, vars)
+		time.Sleep(2950 * time.Millisecond)
+	}
+}
+
+func printOneLineOnce(st *sttsT, vars *varsT) {
+	var out []string
+
+	load := fmt.Sprintf("l %.2f", st.loads[0])
+	disk := fmt.Sprintf("d %s69G", st.rootDiskFree)
+
+	var mem string
+	memUsed := float64(st.mem.used) / (1024 * 1024)
+	if memUsed > 1024 {
+		mem = fmt.Sprintf("m %.1f GB", memUsed/1024)
+	} else {
+		mem = fmt.Sprintf("m %.0f MB", memUsed)
+	}
+
+	var temps, sep string
+	if vars.has.cpu1Temp && !vars.has.cpu2Temp {
+		temps += fmt.Sprintf("c %s°C", st.cpu1Temp)
+		sep = " "
+	} else if vars.has.cpu1Temp && vars.has.cpu2Temp {
+		temps += fmt.Sprintf("c1 %s°C", st.cpu1Temp)
+		temps += fmt.Sprintf(" c2 %s°C", st.cpu2Temp)
+		sep = " "
+	}
+
+	if vars.has.moboTemp {
+		temps += sep + fmt.Sprintf("m %s°C", st.moboTemp)
+		sep = " "
+	}
+
+	if vars.has.driveTemp {
+		temps += sep + fmt.Sprintf("d %s°C", st.driveTemp)
+		sep = " "
+	}
+
+	var wifi string
+	if vars.has.wifi {
+		wifi = vars.wifiIface.Name
+		if st.wifiBss.SSID != "" {
+			wifi += fmt.Sprintf(" %s %ddBm",
+				st.wifiBss.SSID, st.wifiInfo.Signal)
+		} else {
+			wifi += " no conn"
+		}
+	}
+
+	var bat string
+	if vars.has.bat {
+		bat = "b " + st.batLevel + "%"
+		if st.batTimeLeft != "0:00" {
+			bat += " " + st.batTimeLeft
+		}
+	}
+
+	out = append(out, load)
+	out = append(out, mem)
+	out = append(out, disk)
+
+	if temps != "" {
+		out = append(out, temps)
+	}
+
+	if wifi != "" {
+		out = append(out, wifi)
+	}
+
+	if bat != "" {
+		out = append(out, bat)
+	}
+
+	fmt.Printf("%s\n", str.Join(out, " | "))
+}
 
 func printAll(st *sttsT, vars *varsT) {
 	upDays := int(st.uptime.Hours() / 24)
@@ -46,7 +127,7 @@ func printAll(st *sttsT, vars *varsT) {
 	}
 
 	if vars.batCapacityFd != nil {
-		prStr("bat level", st.batLevel)
+		prStr("bat level", st.batLevel+"%")
 	}
 
 	if vars.batPowerFd != nil {
