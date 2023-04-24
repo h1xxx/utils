@@ -50,7 +50,8 @@ type varsT struct {
 	bench bool
 	debug bool
 
-	has hasT
+	has  hasT
+	show showT
 
 	meminfoFd *os.File
 
@@ -77,20 +78,36 @@ type varsT struct {
 	batEnergyFullFd *os.File
 	batPowerFd      *os.File
 	batStatusFd     *os.File
+
+	addInfoFd []*os.File
+
+	vpnRoute   string
+	vpnPidFile string
+}
+
+type showT struct {
+	cpuTemp   bool
+	moboTemp  bool
+	driveTemp bool
+	wifi      bool
+	bat       bool
+	vpn       bool
 }
 
 type hasT struct {
 	cpu1Temp  bool
 	cpu2Temp  bool
-	driveTemp bool
 	moboTemp  bool
+	driveTemp bool
 	wifi      bool
 	bat       bool
 }
 
 func main() {
 	var oneLine, oneLineOnce, bench, debug bool
+	var configFile string
 
+	flag.StringVar(&configFile, "c", "/etc/stts.conf", "path to a config")
 	flag.BoolVar(&oneLine, "o", false, "print info in one line repeatedly")
 	flag.BoolVar(&oneLineOnce, "1", false, "print info in one line once")
 	flag.BoolVar(&bench, "b", false, "perform a benchmark")
@@ -103,6 +120,8 @@ func main() {
 
 	vars.debug = debug
 	vars.bench = bench
+	vars.show = showInit()
+	parseConfig(configFile, &vars)
 	getVars(&vars)
 
 	switch {
@@ -143,24 +162,36 @@ func getVars(vars *varsT) {
 
 	hwmonDetect(vars)
 	i2cDetect(vars)
-	detectWlan(vars)
-	detectBat(vars)
 
-	vars.cpu1TempFds = openHwmon(vars.cpu1TempHwmon, "temp.*_input")
-	vars.cpu2TempFds = openHwmon(vars.cpu2TempHwmon, "temp.*_input")
-
-	for _, hwmon := range vars.driveTempHwmons {
-		vars.driveTempFds = append(vars.driveTempFds,
-			openHwmon(hwmon, "temp.*_input")...)
+	if vars.show.wifi {
+		detectWlan(vars)
 	}
 
-	for _, hwmon := range vars.moboTempHwmons {
+	if vars.show.bat {
+		detectBat(vars)
+	}
+
+	if vars.show.cpuTemp {
+		vars.cpu1TempFds = openHwmon(vars.cpu1TempHwmon, "temp.*input")
+		vars.cpu2TempFds = openHwmon(vars.cpu2TempHwmon, "temp.*input")
+	}
+
+	if vars.show.moboTemp {
+		for _, hwmon := range vars.moboTempHwmons {
+			vars.moboTempFds = append(vars.moboTempFds,
+				openHwmon(hwmon, "temp.*_input")...)
+		}
+
 		vars.moboTempFds = append(vars.moboTempFds,
-			openHwmon(hwmon, "temp.*_input")...)
+			openFiles(vars.i2cMoboTemps)...)
 	}
 
-	vars.moboTempFds = append(vars.moboTempFds,
-		openFiles(vars.i2cMoboTemps)...)
+	if vars.show.driveTemp {
+		for _, hwmon := range vars.driveTempHwmons {
+			vars.driveTempFds = append(vars.driveTempFds,
+				openHwmon(hwmon, "temp.*_input")...)
+		}
+	}
 
 	if len(vars.cpu1TempFds) > 0 {
 		vars.has.cpu1Temp = true
@@ -272,4 +303,16 @@ func closeFiles(vars *varsT) {
 	if vars.batStatusFd != nil {
 		vars.batStatusFd.Close()
 	}
+}
+
+func showInit() showT {
+	var show showT
+
+	show.cpuTemp = true
+	show.moboTemp = true
+	show.driveTemp = true
+	show.wifi = true
+	show.bat = true
+
+	return show
 }
