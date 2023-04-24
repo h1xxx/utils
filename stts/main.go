@@ -12,10 +12,10 @@ import (
 )
 
 type sttsT struct {
-	uptime time.Duration
-	loads  [3]float64
-	procs  int
-	mem    memT
+	uptime       time.Duration
+	loads        [3]float64
+	procs        int
+	mem          memT
 	rootDiskFree float64
 
 	cpu1Temp  string
@@ -27,7 +27,6 @@ type sttsT struct {
 	cpu2Temps  []string
 	driveTemps []string
 	moboTemps  []string
-
 
 	wifiBss  *wifi.BSS
 	wifiInfo *wifi.StationInfo
@@ -44,6 +43,7 @@ type memT struct {
 	buffer int
 	cache  int
 	avail  int
+	huge   int
 }
 
 type varsT struct {

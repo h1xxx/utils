@@ -118,6 +118,7 @@ func printAll(st *sttsT, vars *varsT) {
 	prInt("cache", st.mem.cache/mb)
 	prInt("buff/cache", (st.mem.buffer+st.mem.cache)/mb)
 	prInt("available", st.mem.avail/mb)
+	prInt("hugepages", st.mem.huge/mb)
 	sep()
 
 	prStr("cpu1 temp", st.cpu1Temp)

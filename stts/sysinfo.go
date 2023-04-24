@@ -4,9 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
+
+	str "strings"
 )
 
 func getSysinfo(st *sttsT, vars *varsT) {
@@ -31,61 +32,49 @@ func getSysinfo(st *sttsT, vars *varsT) {
 	// add missing info from /proc/meminfo
 	readMeminfo(st, vars)
 	st.mem.used = st.mem.total - st.mem.free - st.mem.buffer - st.mem.cache
+	st.mem.used -= st.mem.huge
 }
 
 func readMeminfo(st *sttsT, vars *varsT) {
 	rd := bufio.NewReaderSize(vars.meminfoFd, 32)
-	lineId := 1
 	for {
 		lineBin, _, err := rd.ReadLine()
 		if err != nil {
 			break
 		}
+		fields := str.Fields(string(lineBin))
 
-		switch lineId {
-		case 3:
-			key, val := parseMeminfoLine(string(lineBin))
-			if key != "MemAvailable:" {
-				msg := "wrong /proc/meminfo line number %d: %s"
-				errExit(fmt.Errorf(msg, lineId, key))
-			}
+		switch fields[0] {
+		case "MemAvailable:":
+			val := parseMeminfoLine(fields)
 			st.mem.avail = val * 1024
-		case 5:
-			key, val := parseMeminfoLine(string(lineBin))
-			if key != "Cached:" {
-				msg := "wrong /proc/meminfo line number %d: %s"
-				errExit(fmt.Errorf(msg, lineId, key))
-			}
+		case "Cached:":
+			val := parseMeminfoLine(fields)
 			st.mem.cache = val * 1024
-		case 24:
-			key, val := parseMeminfoLine(string(lineBin))
-			if key != "SReclaimable:" {
-				msg := "wrong /proc/meminfo line number %d: %s"
-				errExit(fmt.Errorf(msg, lineId, key))
-			}
+		case "SReclaimable:":
+			val := parseMeminfoLine(fields)
 			st.mem.cache += val * 1024
-		case 25:
-			break
+		case "Hugetlb:":
+			val := parseMeminfoLine(fields)
+			st.mem.huge = val * 1024
 		}
-		lineId++
 	}
+
 	// skip for benchmarking as this poses a large i/o bottleneck
 	if !vars.bench {
 		vars.meminfoFd.Seek(0, 0)
 	}
 }
 
-func parseMeminfoLine(line string) (string, int) {
-	fields := strings.Fields(line)
+func parseMeminfoLine(fields []string) int {
 	if len(fields) < 2 {
-		return line, 0
+		return 0
 	}
-	key := fields[0]
 	val, err := strconv.ParseInt(fields[1], 10, 64)
 	if err != nil {
 		msg := "can't parse /proc/meminfo line: %s\nerror: %h"
-		errExit(fmt.Errorf(msg, line, err))
+		errExit(fmt.Errorf(msg, str.Join(fields, " "), err))
 	}
 
-	return key, int(val)
+	return int(val)
 }
