@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/user"
+	"strconv"
+	"syscall"
 	"time"
 
 	str "strings"
@@ -39,9 +42,12 @@ var (
 
 func main() {
 	var configFile string
+	var privDrop bool
+
 	flag.StringVar(&configFile, "c", "", "path to a config")
 	flag.StringVar(&OUTFILE, "o", "", "path to an output file")
-	flag.BoolVar(&DEBUG, "d", false, "print debug info")
+	flag.BoolVar(&privDrop, "p", false, "drop privileges")
+	flag.BoolVar(&DEBUG, "D", false, "print debug info")
 	flag.Parse()
 
 	var s sessionT
@@ -73,6 +79,10 @@ func main() {
 	flags := os.O_CREATE | os.O_TRUNC | os.O_WRONLY
 	s.outFd, err = os.OpenFile(OUTFILE, flags, 0644)
 	errExit(err)
+
+	if privDrop {
+		dropPrivileges("nobody")
+	}
 
 	// main loop to write to an output file
 	for {
@@ -166,6 +176,29 @@ func getUnseen(c *imapclient.Client, folder string) (int, error) {
 	}
 
 	return int(*data.NumUnseen), nil
+}
+
+func dropPrivileges(newUser string) {
+	userInfo, err := user.Lookup(newUser)
+	errExit(err)
+
+	uid, err := strconv.Atoi(userInfo.Uid)
+	errExit(err)
+
+	gid, err := strconv.Atoi(userInfo.Gid)
+	errExit(err)
+
+	// unset supplementary group ids
+	err = syscall.Setgroups([]int{})
+	errExit(err)
+
+	// set group id (real and effective)
+	err = syscall.Setgid(gid)
+	errExit(err)
+
+	// set user id (real and effective)
+	err = syscall.Setuid(uid)
+	errExit(err)
 }
 
 func print(format string, a ...any) {
