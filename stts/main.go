@@ -33,6 +33,8 @@ type sttsT struct {
 
 	batLevel    string
 	batTimeLeft string
+
+	addInfo []string
 }
 
 type memT struct {
@@ -153,6 +155,7 @@ func getAllInfo(st *sttsT, vars *varsT) {
 	readMoboTemps(st, vars)
 	getWifiInfo(st, vars)
 	getBatInfo(st, vars)
+	readAddInfo(st, vars)
 }
 
 func getVars(vars *varsT) {

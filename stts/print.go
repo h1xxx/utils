@@ -11,47 +11,47 @@ func printOneLine(st *sttsT, vars *varsT) {
 	for {
 		getAllInfo(st, vars)
 		printOneLineOnce(st, vars)
-		time.Sleep(2950 * time.Millisecond)
+		time.Sleep(5 * time.Second)
 	}
 }
 
 func printOneLineOnce(st *sttsT, vars *varsT) {
 	var out []string
 
-	load := fmt.Sprintf("l %.2f", st.loads[0])
+	load := fmt.Sprintf("load %.2f", st.loads[0])
 
 	var mem string
 	memUsed := float64(st.mem.used) / (1024 * 1024)
 	if memUsed > 1024 {
-		mem = fmt.Sprintf("m %.1fG", memUsed/1024)
+		mem = fmt.Sprintf("mem %.1fG", memUsed/1024)
 	} else {
-		mem = fmt.Sprintf("m %.0fM", memUsed)
+		mem = fmt.Sprintf("mem %.0fM", memUsed)
 	}
 
 	var disk string
 	if st.rootDiskFree > 1024 {
-		disk = fmt.Sprintf("d %.1fG", st.rootDiskFree/1024)
+		disk = fmt.Sprintf("disk %.1fG", st.rootDiskFree/1024)
 	} else {
-		disk = fmt.Sprintf("d %.0fM", st.rootDiskFree)
+		disk = fmt.Sprintf("disk %.0fM", st.rootDiskFree)
 	}
 
 	var temps, sep string
 	if vars.has.cpu1Temp && !vars.has.cpu2Temp {
-		temps += fmt.Sprintf("c %s°C", st.cpu1Temp)
+		temps += fmt.Sprintf("cpu %s°C", st.cpu1Temp)
 		sep = " "
 	} else if vars.has.cpu1Temp && vars.has.cpu2Temp {
-		temps += fmt.Sprintf("c1 %s°C", st.cpu1Temp)
-		temps += fmt.Sprintf(" c2 %s°C", st.cpu2Temp)
+		temps += fmt.Sprintf("cpu1 %s°C", st.cpu1Temp)
+		temps += fmt.Sprintf(" cpu2 %s°C", st.cpu2Temp)
 		sep = " "
 	}
 
 	if vars.has.moboTemp {
-		temps += sep + fmt.Sprintf("m %s°C", st.moboTemp)
+		temps += sep + fmt.Sprintf("mobo %s°C", st.moboTemp)
 		sep = " "
 	}
 
 	if vars.has.driveTemp {
-		temps += sep + fmt.Sprintf("d %s°C", st.driveTemp)
+		temps += sep + fmt.Sprintf("disk %s°C", st.driveTemp)
 		sep = " "
 	}
 
@@ -68,10 +68,14 @@ func printOneLineOnce(st *sttsT, vars *varsT) {
 
 	var bat string
 	if vars.has.bat {
-		bat = "b " + st.batLevel + "%"
+		bat = "bat " + st.batLevel + "%"
 		if st.batTimeLeft != "0:00" {
 			bat += " " + st.batTimeLeft
 		}
+	}
+
+	if len(st.addInfo) > 0 {
+		out = append(out, st.addInfo...)
 	}
 
 	out = append(out, load)
