@@ -24,6 +24,7 @@ type sessionT struct {
 
 	authTries  int
 	configFile string
+	resCount   int
 }
 
 type folderT struct {
@@ -87,16 +88,24 @@ func main() {
 				s.outFd.Truncate(0)
 				break
 			}
-			if num >= 0 {
+			if num > 0 {
 				res = append(res, f.mnemo)
 			}
 			print("%-8s%-24s%-2d unseen", f.mnemo, f.path, num)
 		}
 
-		s.outFd.Truncate(0)
-		s.outFd.Seek(0, 0)
-		_, err = fmt.Fprintf(s.outFd, "mail: %s", str.Join(res, ","))
-		errExit(err)
+		if len(res) != s.resCount {
+			s.resCount = len(res)
+
+			s.outFd.Seek(0, 0)
+			s.outFd.Truncate(0)
+
+			if len(res) > 0 {
+				_, err = fmt.Fprintf(s.outFd, "mail: %s",
+					str.Join(res, ","))
+				errExit(err)
+			}
+		}
 
 		print("end of loop\n")
 		time.Sleep(10 * time.Second)
@@ -104,13 +113,14 @@ func main() {
 }
 
 func (s *sessionT) login() {
+	var err error
+
 	if s.c != nil && s.c.State().String() == "authenticated" {
 		print("already logged in.")
 		return
 	}
 
-	var err error
-	print("logging in...")
+	print("connecting...")
 	s.c, err = imapclient.DialTLS(s.mailServer+":993", nil)
 	if err != nil {
 		print("dial tls error %s", err)
@@ -121,6 +131,7 @@ func (s *sessionT) login() {
 		return
 	}
 
+	print("logging in...")
 	err = s.c.Login(s.user, s.pass).Wait()
 	if err != nil {
 		print("login error %s", err)
