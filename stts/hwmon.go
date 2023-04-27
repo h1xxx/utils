@@ -10,6 +10,13 @@ import (
 )
 
 func readCpuTemps(st *sttsT, vars *varsT) {
+	st.cpu1Temp = ""
+	st.cpu2Temp = ""
+	if vars.debug {
+		st.cpu1Temps = []string{}
+		st.cpu2Temps = []string{}
+	}
+
 	for _, fd := range vars.cpu1TempFds {
 		temp := readTemp(fd, vars)
 		if temp > st.cpu1Temp {
@@ -32,6 +39,10 @@ func readCpuTemps(st *sttsT, vars *varsT) {
 }
 
 func readDriveTemps(st *sttsT, vars *varsT) {
+	st.driveTemp = ""
+	if vars.debug {
+		st.driveTemps = []string{}
+	}
 	for _, fd := range vars.driveTempFds {
 		temp := readTemp(fd, vars)
 		if temp > st.driveTemp {
@@ -44,6 +55,11 @@ func readDriveTemps(st *sttsT, vars *varsT) {
 }
 
 func readMoboTemps(st *sttsT, vars *varsT) {
+	st.moboTemp = ""
+	if vars.debug {
+		st.moboTemps = []string{}
+	}
+
 	for _, fd := range vars.moboTempFds {
 		temp := readTemp(fd, vars)
 		if temp > st.moboTemp {
