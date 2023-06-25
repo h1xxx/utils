@@ -35,6 +35,8 @@ type sttsT struct {
 	batTimeLeft string
 
 	addInfo []string
+
+	ps []processT
 }
 
 type memT struct {
@@ -48,8 +50,86 @@ type memT struct {
 	huge   int
 }
 
+type processT struct {
+	pid  string
+	bin  string
+	args string
+	pwd  string
+
+	readBytes  int
+	writeBytes int
+	fdCount    int
+	stat       psStatT
+
+	files []string
+	env   []string
+}
+
+type psStatT struct {
+	pid     int
+	comm    string
+	state   rune
+	ppid    int
+	pgrp    int
+	session int
+	tty_nr  int
+	tpgid   int
+	flags   uint
+	minflt  uint64
+
+	cminflt     uint64
+	majflt      uint64
+	cmajflt     uint64
+	utime       uint64
+	stime       uint64
+	cutime      int
+	cstime      int
+	priority    int
+	nice        int
+	num_threads int
+
+	itrealvalue int
+	starttime   uint64
+	vsize       uint64
+	rss         int64
+	rsslim      uint64
+	startcode   uint64
+	endcode     uint64
+	startstack  uint64
+	kstkesp     uint64
+	kstkeip     uint64
+
+	signal      uint64
+	blocked     uint64
+	sigignore   uint64
+	sigcatch    uint64
+	wchan       uint64
+	nswap       uint64
+	cnswap      uint64
+	exit_signal int
+	processor   int
+	rt_priority uint
+
+	policy                uint
+	delayacct_blkio_ticks uint64
+	guest_time            uint64
+	cguest_time           int64
+	start_data            uint64
+	end_data              uint64
+	start_brk             uint64
+	arg_start             uint64
+	arg_end               uint64
+	env_start             uint64
+
+	env_end   uint64
+	exit_code int
+}
+
 type varsT struct {
 	bench bool
+	files bool
+	env   bool
+	login bool
 	debug bool
 
 	has  hasT
@@ -106,13 +186,16 @@ type hasT struct {
 }
 
 func main() {
-	var oneLine, oneLineOnce, bench, debug bool
+	var oneLine, oneLineOnce, bench, files, env, login, debug bool
 	var configFile string
 
 	flag.StringVar(&configFile, "c", "/etc/stts.conf", "path to a config")
 	flag.BoolVar(&oneLine, "o", false, "print info in one line repeatedly")
 	flag.BoolVar(&oneLineOnce, "1", false, "print info in one line once")
 	flag.BoolVar(&bench, "b", false, "perform a benchmark")
+	flag.BoolVar(&files, "f", false, "show opened files")
+	flag.BoolVar(&env, "e", false, "show env vars")
+	flag.BoolVar(&login, "l", false, "show login shell processes")
 	flag.BoolVar(&debug, "d", false, "add debugging info")
 
 	flag.Parse()
@@ -120,8 +203,11 @@ func main() {
 	var st sttsT
 	var vars varsT
 
-	vars.debug = debug
 	vars.bench = bench
+	vars.files = files
+	vars.env = env
+	vars.login = login
+	vars.debug = debug
 	vars.show = showInit()
 	parseConfig(configFile, &vars)
 	getVars(&vars)
@@ -134,6 +220,7 @@ func main() {
 		printOneLineOnce(&st, &vars)
 	default:
 		getAllInfo(&st, &vars)
+		getProcInfo(&st, &vars)
 		printAll(&st, &vars)
 		if debug {
 			printDebug(&st, &vars)

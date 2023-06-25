@@ -14,6 +14,15 @@ func fileExists(file string) bool {
 	return true
 }
 
+func elInSlice(sl []string, el string) bool {
+	for _, s := range sl {
+		if s == el {
+			return true
+		}
+	}
+	return false
+}
+
 func errExit(err error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)

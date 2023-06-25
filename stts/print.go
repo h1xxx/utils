@@ -145,6 +145,39 @@ func printAll(st *sttsT, vars *varsT) {
 	if vars.batPowerFd != nil {
 		prStr("bat time left", st.batTimeLeft)
 	}
+
+	for _, p := range st.ps {
+		if !vars.login && p.args[0] == '-' {
+			continue
+		}
+
+		sep()
+		prStrL("pid", p.pid)
+		prStrL("comm", p.stat.comm)
+		prStrL("bin", p.bin)
+		prStrL("args", p.args)
+		prStrL("pwd", p.pwd)
+		prIntL("MB read", p.readBytes/mb)
+		prIntL("MB written", p.writeBytes/mb)
+		prIntL("fd count", p.fdCount)
+		prIntL("ppid", p.stat.ppid)
+
+		if vars.files {
+			header := "files"
+			for _, file := range p.files {
+				prStrL(header, file)
+				header = ""
+			}
+		}
+
+		if vars.env {
+			header := "env vars"
+			for _, env := range p.env {
+				prStrL(header, env)
+				header = ""
+			}
+		}
+	}
 }
 
 func printDebug(st *sttsT, vars *varsT) {
@@ -178,8 +211,16 @@ func prInt(s string, i int) {
 	fmt.Printf("%-14s%10d\n", s, i)
 }
 
+func prIntL(s string, i int) {
+	fmt.Printf("%-14s%d\n", s, i)
+}
+
 func prStr(s, v string) {
 	fmt.Printf("%-14s%10s\n", s, v)
+}
+
+func prStrL(s, v string) {
+	fmt.Printf("%-14s%s\n", s, v)
 }
 
 func prSl(s string, sl []string) {
