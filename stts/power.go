@@ -20,17 +20,26 @@ func detectBat(vars *varsT) {
 
 	vars.batEnergyFd, err = os.Open(batLoc + "energy_now")
 	if err != nil {
-		vars.batEnergyFd = nil
+		vars.batEnergyFd, err = os.Open(batLoc + "charge_now")
+		if err != nil {
+			vars.batEnergyFd = nil
+		}
 	}
 
 	vars.batEnergyFullFd, err = os.Open(batLoc + "energy_full")
 	if err != nil {
-		vars.batEnergyFullFd = nil
+		vars.batEnergyFullFd, err = os.Open(batLoc + "charge_full")
+		if err != nil {
+			vars.batEnergyFullFd = nil
+		}
 	}
 
 	vars.batPowerFd, err = os.Open(batLoc + "power_now")
 	if err != nil {
-		vars.batPowerFd = nil
+		vars.batPowerFd, err = os.Open(batLoc + "current_now")
+		if err != nil {
+			vars.batPowerFd = nil
+		}
 	}
 
 	vars.batStatusFd, err = os.Open(batLoc + "status")

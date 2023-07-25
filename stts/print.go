@@ -30,9 +30,9 @@ func printOneLineOnce(st *sttsT, vars *varsT) {
 
 	var disk string
 	if st.rootDiskFree > 1024 {
-		disk = fmt.Sprintf("disk %.1fG", st.rootDiskFree/1024)
+		disk = fmt.Sprintf("df %.1fG", st.rootDiskFree/1024)
 	} else {
-		disk = fmt.Sprintf("disk %.0fM", st.rootDiskFree)
+		disk = fmt.Sprintf("df %.0fM", st.rootDiskFree)
 	}
 
 	var temps, sep string
@@ -46,12 +46,12 @@ func printOneLineOnce(st *sttsT, vars *varsT) {
 	}
 
 	if vars.has.moboTemp {
-		temps += sep + fmt.Sprintf("mobo %s°C", st.moboTemp)
+		temps += sep + fmt.Sprintf("mb %s°C", st.moboTemp)
 		sep = " "
 	}
 
 	if vars.has.driveTemp {
-		temps += sep + fmt.Sprintf("disk %s°C", st.driveTemp)
+		temps += sep + fmt.Sprintf("d %s°C", st.driveTemp)
 		sep = " "
 	}
 

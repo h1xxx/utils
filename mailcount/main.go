@@ -77,7 +77,9 @@ func main() {
 
 	var err error
 	flags := os.O_CREATE | os.O_TRUNC | os.O_WRONLY
+	oldUmask := syscall.Umask(0)
 	s.outFd, err = os.OpenFile(OUTFILE, flags, 0644)
+	syscall.Umask(oldUmask)
 	errExit(err)
 
 	if privDrop {
