@@ -58,7 +58,7 @@ func printOneLineOnce(st *sttsT, vars *varsT) {
 	var wifi string
 	if vars.has.wifi {
 		wifi = vars.wifiIface.Name
-		if st.wifiBss.SSID != "" {
+		if st.wifiBss != nil && st.wifiBss.SSID != "" {
 			wifi += fmt.Sprintf(" %s %ddBm",
 				st.wifiBss.SSID, st.wifiInfo.Signal)
 		} else {
@@ -131,7 +131,7 @@ func printAll(st *sttsT, vars *varsT) {
 	prStr("mobo temp", st.moboTemp)
 	sep()
 
-	if vars.wifiClient != nil {
+	if vars.wifiClient != nil && st.wifiBss != nil {
 		prStr("wifi iface", vars.wifiIface.Name)
 		prStr("ssid", st.wifiBss.SSID)
 		prInt("wifi signal", st.wifiInfo.Signal)
