@@ -16,8 +16,8 @@ usage() {
 
 -b, --boot-size       boot partition size
 -r, --root-size       root partition size
--h, --home-size       home partition size (omit if no defined)
--v, --var-size        var partition size (omit if no defined)
+-h, --home-size       home partition size (omit if not defined)
+-v, --var-size        var partition size (omit if not defined)
 
 --boot-part           existing boot partition path to utilize
 --root-part           existing root partition path to utilize
@@ -87,13 +87,16 @@ ROOT_DIR=/tmp/deb_build
 # type of the disk: 'device' (path to /dev/*) or 'file' (path to a regular file)
 DEV_TYPE=
 
+# bootloader install type: 'bios' 'or' 'uefi'
+INST_TYPE=
+
 # first free loop device to use for dev_type 'file'
 LOOP_DEV=
 
 # prefix for labeling partitions and filesystems
 LABEL=
 
-# dev mapper name for encrypted root
+# dev mapper name for encrypted home
 MAP_DEV=tmp_debootstrap_home
 PART_ENC="/dev/mapper/${MAP_DEV}"
 
@@ -101,12 +104,14 @@ PART_ENC="/dev/mapper/${MAP_DEV}"
 # from the sys config files
 UUID_GRUB="$(uuidgen | sed 's|.*-.*-.*-.*-.\{4\}|00000000-0000-0000-0000-0000|')"
 UUID_BOOT="$(uuidgen | sed 's|.*-.*-.*-.*-.\{4\}|00000000-0000-0000-0000-0000|')"
+UUID_BOOT_FAT="$(rev <<< ${UUID_BOOT} | cut -c 1-8 | rev)"
 UUID_ROOT="$(uuidgen | sed 's|.*-.*-.*-.*-.\{4\}|00000000-0000-0000-0000-0000|')"
 UUID_HOME="$(uuidgen | sed 's|.*-.*-.*-.*-.\{4\}|00000000-0000-0000-0000-0000|')"
 UUID_VAR="$(uuidgen | sed 's|.*-.*-.*-.*-.\{4\}|00000000-0000-0000-0000-0000|')"
 
 # chroot command interpreter
 CCMD="chroot ${ROOT_DIR} env -i DEBIAN_FRONTEND=noninteractive TERM=linux PATH=/usr/bin:/usr/sbin"
+
 
 # parse args
 # ==========
@@ -213,7 +218,7 @@ SIZE="$(( BOOT_SIZE_B + ROOT_SIZE_B + HOME_SIZE_B + VAR_SIZE_B ))"
 readonly DEV PUB_SSH_FILE ENCRYPT PURGE \
   BOOT_SIZE ROOT_SIZE HOME_SIZE VAR_SIZE SIZE \
   ROOT_DIR DEV_TYPE \
-  UUID_GRUB UUID_ROOT UUID_HOME UUID_VAR
+  UUID_GRUB UUID_BOOT UUID_BOOT_FAT UUID_ROOT UUID_HOME UUID_VAR
 
 
 # tests and checks
@@ -274,40 +279,53 @@ purge_partitions() {
 }
 
 get_partitions() {
-  if [ "${DEV_TYPE}" == 'device' ]; then
-    # find partition numbers to use if partitions are not defined
-    if [[ -n "${DEV}" ]]; then
-      partsync
-      local last_part
-      last_part="$(sgdisk -p "${DEV}" \
-        | sed -n '/^Number/,$p' \
-        | tail -n +2 \
-        | sort -n \
-        | awk '{print $1}' \
-        | tail -n1 \
-        2> /dev/null)"
-
-      [[ -z "${last_part}" ]] || [ "${PURGE}" == 'true' ] && last_part=0
-
-      GRUB_PART="${DEV}$((++last_part))"
-      GRUB_PART_N="${last_part}"
-
-      BOOT_PART="${DEV}$((++last_part))"
-      BOOT_PART_N="${last_part}"
-
-      ROOT_PART="${DEV}$((++last_part))"
-      ROOT_PART_N="${last_part}"
-
-      [[ -n "${HOME_SIZE}" ]] && HOME_PART="${DEV}$((++last_part))"
-      [[ -n "${HOME_SIZE}" ]] && HOME_PART_N="${last_part}"
-
-      [[ -n "${VAR_SIZE}" ]] && VAR_PART="${DEV}$((++last_part))"
-      [[ -n "${VAR_SIZE}" ]] && VAR_PART_N="${last_part}"
-
-      sleep 0.3
+  case "${DEV_TYPE}" in
+  'device' )
+    # find partition numbers to use if partitions are not defined and the
+    # device is defined
+    if [[ -z "${DEV}" ]]; then
+      return
     fi
 
-  elif [ "${DEV_TYPE}" == 'file' ]; then
+    partsync
+    local last_part
+    last_part="$(sgdisk -p "${DEV}" \
+      | sed -n '/^Number/,$p' \
+      | tail -n +2 \
+      | sort -n \
+      | awk '{print $1}' \
+      | tail -n1 \
+      2> /dev/null)"
+
+    if [[ -z "${last_part}" ]] || [ "${PURGE}" == 'true' ]; then
+      last_part=0
+      INST_TYPE='bios'
+    else
+      INST_TYPE='uefi'
+    fi
+
+    if [ "${INST_TYPE}" == "bios" ]; then
+      GRUB_PART="${DEV}$((++last_part))"
+      GRUB_PART_N="${last_part}"
+    fi
+
+    BOOT_PART="${DEV}$((++last_part))"
+    BOOT_PART_N="${last_part}"
+
+    ROOT_PART="${DEV}$((++last_part))"
+    ROOT_PART_N="${last_part}"
+
+    [[ -n "${HOME_SIZE}" ]] && HOME_PART="${DEV}$((++last_part))"
+    [[ -n "${HOME_SIZE}" ]] && HOME_PART_N="${last_part}"
+
+    [[ -n "${VAR_SIZE}" ]] && VAR_PART="${DEV}$((++last_part))"
+    [[ -n "${VAR_SIZE}" ]] && VAR_PART_N="${last_part}"
+
+    sleep 0.3
+    ;;
+
+  'file' )
+    INST_TYPE='bios'
     LOOP_DEV="$(losetup --find)"
 
     GRUB_PART="${LOOP_DEV}p1"
@@ -325,7 +343,8 @@ get_partitions() {
     [[ -n "${VAR_SIZE}" ]] && VAR_PART="${LOOP_DEV}p5"
     [[ -n "${VAR_SIZE}" ]] && VAR_PART_N=5
     sleep 0.3
-  fi
+    ;;
+  esac
 }
 
 create_partitions() {
@@ -337,32 +356,35 @@ create_partitions() {
 
   partsync
 
-  echo '+ creating grub partition...'
-  sgdisk --new "${GRUB_PART_N}::+2M" \
-    -u "${GRUB_PART_N}:${UUID_GRUB}" "${DEV}" && partsync
+  if [ "${INST_TYPE}" == 'bios' ]; then
+    echo '+ creating grub partition...'
+    sgdisk --new "${GRUB_PART_N}::+2M" \
+      -u "${GRUB_PART_N}:${UUID_GRUB}" "${DEV}" && partsync
 
-  # mark the grub partition as BIOS boot partition
-  sgdisk -t "${GRUB_PART_N}:ef02" "${DEV}" && partsync
+    # mark the grub partition as BIOS boot partition
+    sgdisk -t "${GRUB_PART_N}:ef02" "${DEV}" && partsync
 
-  # name the grub partition
-  sgdisk -c "${GRUB_PART_N}:${LABEL}-grub" "${DEV}" && partsync
+    # name the grub partition
+    sgdisk -c "${GRUB_PART_N}:${LABEL}-grub" "${DEV}" && partsync
+  fi
 
 
   echo '+ creating boot partition...'
   sgdisk --new "${BOOT_PART_N}:+2M:+${BOOT_SIZE}" \
     -u "${BOOT_PART_N}:${UUID_BOOT}" "${DEV}" && partsync
 
-  # for efi: todo add uefi flag
-  #sgdisk --new "${BOOT_PART_N}:+2M:+${BOOT_SIZE}" "${DEV}" && partsync
+  if [ "${INST_TYPE}" == 'bios' ]; then
+    # set legacy bios bootable attribute on boot device;
+    # grub ignores it, but syslinux does not
+    sgdisk --attributes "${BOOT_PART_N}:set:2" "${DEV}" && partsync
+
+  elif [ "${INST_TYPE}" == 'uefi' ]; then
+    # mark the boot partition as EFI system partition
+    sgdisk -t "${BOOT_PART_N}:ef00" "${DEV}" && partsync
+  fi
 
   # name the boot partition
   sgdisk -c "${BOOT_PART_N}:${LABEL}-boot" "${DEV}" && partsync
-
-  # mark the boot partition as EFI system partition (todo: add uefi flag)
-  #sgdisk -t "${BOOT_PART_N}:ef00" "${DEV}" && partsync
-
-  # set legacy bios bootable attribute on boot device
-  sgdisk --attributes "${BOOT_PART_N}:set:2" "${DEV}" && partsync
 
 
   echo '+ creating root partition...'
@@ -400,10 +422,12 @@ create_partitions() {
 
 create_filesystems() {
   echo '+ creating boot filesystem...'
-  mkfs.ext4 -F -L "${LABEL}-boot" -U "${UUID_BOOT}" "${BOOT_PART}"
+  if [ "${INST_TYPE}" == 'bios' ]; then
+    mkfs.ext4 -F -L "${LABEL}-boot" -U "${UUID_BOOT}" "${BOOT_PART}"
 
-  # for uefi; todo: add uefi flag
-  #mkfs.fat -n "${LABEL}-boot" -F32 "${BOOT_PART}"
+  elif [ "${INST_TYPE}" == 'uefi' ]; then
+    mkfs.fat -i "${UUID_BOOT_FAT}" -n "${LABEL}-boot" -F32 "${BOOT_PART}"
+  fi
 
   echo '+ creating root filesystem...'
   mkfs.ext4 -F -L "${LABEL}-root" -U "${UUID_ROOT}" "${ROOT_PART}"
@@ -457,9 +481,14 @@ mount_partitions() {
 
 set_fstab() {
   echo '+ configuring fstab...'
-  # todo: add uefi flag
-  #local uuid_boot
-  #uuid_boot="$(blkid -s UUID -o value ${BOOT_PART})"
+
+  local uuid_boot
+  if [ "${INST_TYPE}" == 'bios' ]; then
+    uuid_boot="${UUID_BOOT}"
+
+  elif [ "${INST_TYPE}" == 'uefi' ]; then
+    uuid_boot="${UUID_BOOT_FAT}"
+  fi
 
   cat > ${ROOT_DIR}/etc/fstab <<EOF
 proc    /proc   proc            rw,nosuid,nodev,noexec,hidepid=2,gid=0  0 0
@@ -472,7 +501,7 @@ devpts  /dev/pts        devpts  rw,nosuid,noexec,mode=0620,gid=5        0 0
 lock    /run/lock       tmpfs   rw,nosuid,nodev,noexec,mode=1777        0 0
 
 UUID=${UUID_ROOT}      /       ext4    rw,lazytime,noiversion          0 1
-UUID=${UUID_BOOT}      /boot   ext4    rw,sync,noiversion              0 2
+UUID=${uuid_boot}      /boot   ext4    rw,sync,noiversion              0 2
 EOF
 }
 
@@ -542,18 +571,21 @@ install_bootloader() {
   echo '+ installing grub...'
   local dev
   case "${DEV_TYPE}" in
-    device ) dev=${DEV} ;;
-    file   ) dev=${LOOP_DEV} ;;
+  'device' ) dev=${DEV} ;;
+  'file'   ) dev=${LOOP_DEV} ;;
   esac
 
-  ${CCMD} apt-get -y install grub2
-  ${CCMD} grub-install --target=i386-pc ${dev} --locales=
+  if [ "${INST_TYPE}" == 'bios' ]; then
+    ${CCMD} apt-get -y install grub2
+    ${CCMD} grub-install --target=i386-pc ${dev} --locales=
+
+  elif [ "${INST_TYPE}" == 'uefi' ]; then
+    mkdir -p "${ROOT_DIR}/boot/efi"
+    ${CCMD} apt-get -y install grub-efi-amd64
+    ${CCMD} grub-install --efi-directory=/boot/efi --target=x86_64-efi --locales=
+  fi
+
   ${CCMD} update-grub
-
-  # todo: add uefi flag
-  #${CCMD} apt-get -y install grub-efi-amd64
-  #${CCMD} grub-install --efi-directory=/boot/efi --target=x86_64-efi --locales=
-
 }
 
 deploy_ssh_key() {
@@ -566,7 +598,9 @@ deploy_ssh_key() {
 
 unmount() {
   echo '+ unmounting...'
-  umount ${ROOT_DIR}/dev/pts/  ${ROOT_DIR}/{boot,dev,proc,sys}/ ${ROOT_DIR}/
+  umount ${ROOT_DIR}/dev/pts/ \
+    ${ROOT_DIR}/{boot,dev,proc,sys,var/tmp}/ \
+    ${ROOT_DIR}/
 
   [ "${ENCRYPT}" == 'true' ] && cryptsetup luksClose ${MAP_DEV}
   [ "${DEV_TYPE}" == 'file' ] && losetup -d "${LOOP_DEV}"
@@ -585,6 +619,7 @@ fi
 
 echo -e "target device/file   ${DEV}
 device type          ${DEV_TYPE}
+install type         ${INST_TYPE}
 
 grub partition       ${GRUB_PART}
 boot partition       ${BOOT_PART}
@@ -627,7 +662,7 @@ if [[ "${PURGE}" == 'true' ]]; then
 fi
 
 # make sure that these global vars are readonly from now on
-readonly BOOT_PART ROOT_PART HOME_PART VAR_PART LOOP_DEV
+readonly BOOT_PART ROOT_PART HOME_PART VAR_PART LOOP_DEV INST_TYPE
 
 if [[ -n "${BOOT_PART}" ]] && [[ -n "${ROOT_PART}" ]]; then
   create_partitions
@@ -639,10 +674,11 @@ mount_partitions
 echo '+ installing...'
 debootstrap --arch amd64 --include=vim,openssh-server bookworm ${ROOT_DIR} http://ftp.uk.debian.org/debian
 
-mount --bind /dev /${ROOT_DIR}/dev
-mount --bind /dev/pts /${ROOT_DIR}/dev/pts
-mount --bind /proc /${ROOT_DIR}/proc
-mount --bind /sys /${ROOT_DIR}/sys
+mount --bind /dev ${ROOT_DIR}/dev
+mount --bind /dev/pts ${ROOT_DIR}/dev/pts
+mount --bind /proc ${ROOT_DIR}/proc
+mount --bind /sys ${ROOT_DIR}/sys
+mount --types tmpfs tmpfs ${ROOT_DIR}/var/tmp
 
 set_fstab
 set_timezone
@@ -660,8 +696,3 @@ unmount
 
 echo '+ done'
 
-
-
-# todo: add uefi flag
-#echo "don't forget to manually add uefi entries, e.g.:"
-#echo 'efibootmgr -v -c -d /dev/sda -p 1 -l \\efi\\boot\\bootx64.efi -L "xx syslinux"'
