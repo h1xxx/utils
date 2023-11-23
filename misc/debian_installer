@@ -73,6 +73,7 @@ BOOT_PART=
 ROOT_PART=
 HOME_PART=
 VAR_PART=
+BOOT_PART=
 
 # partition numbers
 GRUB_PART_N=
@@ -83,6 +84,9 @@ VAR_PART_N=
 
 # default path to mount partitions
 ROOT_DIR=/tmp/deb_build
+
+# LV containing efi system partition
+BOOT_DISK=
 
 # type of the disk: 'device' (path to /dev/*), 'volume_group' (LVM volume group
 # name), or 'file' (path to a regular file)
@@ -281,6 +285,10 @@ if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
     err_exit "volume group name can't have a dash in it"
   fi
 
+  if [[ ${LABEL} == *-* ]]; then
+    err_exit "label prefix can't have a dash in it"
+  fi
+
   if [[ ${PURGE} == 'true' ]]; then
     err_exit "can't purge a volume group, please remove it manually"
   fi
@@ -321,7 +329,14 @@ get_free_space() {
 }
 
 partsync() {
-  partprobe "${DEV}"
+  case "${DEV_TYPE}" in
+  'file'|'device' )
+    partprobe "${DEV}"
+    ;;
+  'volume_group' )
+    partprobe "${BOOT_DISK}"
+    ;;
+  esac
   sleep 0.3
 }
 
@@ -379,8 +394,10 @@ get_partitions() {
     ;;
 
   'volume_group' )
-    INST_TYPE='uefi'
-    BOOT_PART="/dev/mapper/${DEV}-${LABEL}_boot"
+    INST_TYPE='bios'
+    BOOT_DISK="/dev/mapper/${DEV}-${LABEL}_boot"
+    GRUB_PART="/dev/mapper/${DEV}-${LABEL}_boot1"
+    BOOT_PART="/dev/mapper/${DEV}-${LABEL}_boot2"
     ROOT_PART="/dev/mapper/${DEV}-${LABEL}_root"
 
     [[ -n "${HOME_SIZE}" ]] && HOME_PART="/dev/mapper/${DEV}-${LABEL}_home"
@@ -415,6 +432,8 @@ get_partitions() {
 
 create_partitions() {
   if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
+    echo '+ creating logical volumes...'
+
     lvcreate -L "${BOOT_SIZE}" "${DEV}" -n "${LABEL}_boot"
     lvcreate -L "${ROOT_SIZE}" "${DEV}" -n "${LABEL}_root"
 
@@ -426,6 +445,19 @@ create_partitions() {
 
     sleep 0.3
     lvscan > /dev/null
+
+    echo '+ creating boot disk...'
+
+    sgdisk --zap-all "${BOOT_DISK}" && partsync
+    sgdisk -g "${BOOT_DISK}" && partsync
+
+    sgdisk --new "1::+2M" -u "1:${UUID_GRUB}" "${BOOT_DISK}" && partsync
+    sgdisk -t "1:ef02" "${BOOT_DISK}" && partsync
+    sgdisk -c "1:${LABEL}-grub" "${BOOT_DISK}" && partsync
+
+    sgdisk --new "2:+2M:" -u "2:${UUID_BOOT}" "${BOOT_DISK}" && partsync
+    sgdisk --attributes "2:set:2" "${BOOT_DISK}" && partsync
+    sgdisk -c "2:${LABEL}-boot" "${BOOT_DISK}" && partsync
 
     return
   fi
@@ -655,7 +687,7 @@ install_bootloader() {
   local dev
   case "${DEV_TYPE}" in
   'device'       ) dev=${DEV} ;;
-  'volume_group' ) dev=${DEV} ;;
+  'volume_group' ) dev=${BOOT_DISK} ;;
   'file'         ) dev=${LOOP_DEV} ;;
   esac
 
@@ -669,7 +701,23 @@ install_bootloader() {
     ${CCMD} grub-install --efi-directory=/boot/efi --target=x86_64-efi --locales=
   fi
 
+  local p="nomodeset root=LABEL=${LABEL}-root net.ifnames=0"
+  sed -i \
+    -e 's|^#GRUB_TERMINAL=|GRUB_TERMINAL=|' \
+    -e 's|^#GRUB_DISABLE_LINUX_UUID=|GRUB_DISABLE_LINUX_UUID=|' \
+    -e "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT='$p'|" \
+    /etc/default/grub
+
   ${CCMD} update-grub
+}
+
+sys_config() {
+  ${CCMD} sh -c 'echo root:root | chpasswd'
+
+  echo 'net.ipv6.conf.all.disable_ipv6 = 1' \
+    > ${ROOT_DIR}/etc/sysctl.d/70-disable-ipv6.conf
+
+  sed -i 's|^#PermitRootLogin|PermitRootLogin' ${ROOT_DIR}/etc/ssh/sshd_config
 }
 
 deploy_ssh_key() {
@@ -780,6 +828,7 @@ echo '+ installing kernel...'
 ${CCMD} apt-get -y --no-install-recommends install linux-image-amd64 zstd
 
 install_bootloader
+sys_config
 deploy_ssh_key
 unmount
 
