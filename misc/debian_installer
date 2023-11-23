@@ -5,9 +5,9 @@ set +x
 usage() {
   echo 'usage: dev_install [ARGS]
 
--t, --target <path>   path to target disk device, physical volume, or file
+-t, --target <path>   path to target disk device, LVM volume group name, or file
 
--l, --label           prefix for labeling VGs, LVs, partitions and filesystems
+-l, --label           prefix for LVM logical volumes, partitions and filesystems
 -k, --public-key      path to a public ssh key file to include in image
 
 -e, --encrypt         encrypt home partition
@@ -84,7 +84,8 @@ VAR_PART_N=
 # default path to mount partitions
 ROOT_DIR=/tmp/deb_build
 
-# type of the disk: 'device' (path to /dev/*) or 'file' (path to a regular file)
+# type of the disk: 'device' (path to /dev/*), 'volume_group' (LVM volume group
+# name), or 'file' (path to a regular file)
 DEV_TYPE=
 
 # bootloader install type: 'bios' 'or' 'uefi'
@@ -206,10 +207,25 @@ else
   fi
 fi
 
-if [[ ${DEV} == /dev/* ]]; then
+if [[ "${DEV}" =~ /dev/[sn].* ]]; then
   DEV_TYPE='device'
+
+elif [ -z "${DEV}" ]; then
+  dm=/dev/mapper/*
+  if [[ "${BOOT_PART}" == ${dm} ]] && [[ "${ROOT_PART}" == ${dm} ]]; then
+    DEV_TYPE='volume_group'
+  elif [[ "${BOOT_PART}" == ${dm} ]] || [[ "${ROOT_PART}" == ${dm} ]]; then
+    err_exit "both boot and root partitions need to be on '/dev/mapper/' path"
+  else
+    DEV_TYPE='device'
+  fi
+
 else
-  DEV_TYPE='file'
+  if vgs "${DEV}" >/dev/null 2>&1; then
+    DEV_TYPE='volume_group'
+  else
+    DEV_TYPE='file'
+  fi
 fi
 
 SIZE="$(( BOOT_SIZE_B + ROOT_SIZE_B + HOME_SIZE_B + VAR_SIZE_B ))"
@@ -233,12 +249,41 @@ command -v mkfs.fat  >/dev/null || err_exit 'mkfs.fat from dosfstools missing'
 
 [[ -z "${LABEL}" ]] && err_exit 'label prefix not defined'
 
+blkid -s PARTLABEL -o value \
+  | grep -q \
+    -e ${LABEL}-grub \
+    -e ${LABEL}-boot \
+    -e ${LABEL}-root \
+    -e ${LABEL}-home \
+    -e ${LABEL}-var \
+  && err_exit "label prefix '${LABEL}' already exists"
+
 findmnt "${ROOT_DIR}" && err_exit "${ROOT_DIR} already mounted"
 [ "${ROOT_DIR}" == '' ] && err_exit "ROOT_DIR is empty"
 [ "${ROOT_DIR}" == '/' ] && err_exit "/ as ROOT_DIR not allowed"
 
-if [ ${DEV_TYPE} == 'file' ]; then
+if [ "${DEV_TYPE}" == 'file' ]; then
   command -v qemu-img >/dev/null || err_exit 'qemu-img from qemu-system-x86 missing'
+fi
+
+if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
+  lvdisplay \
+  | grep '  LV Name  ' \
+  | grep -q \
+    -e ${LABEL}_grub \
+    -e ${LABEL}_boot \
+    -e ${LABEL}_root \
+    -e ${LABEL}_home \
+    -e ${LABEL}_var \
+  && err_exit "logical volumes with prefix '${LABEL}' already exist"
+
+  if [[ ${DEV} == *-* ]]; then
+    err_exit "volume group name can't have a dash in it"
+  fi
+
+  if [[ ${PURGE} == 'true' ]]; then
+    err_exit "can't purge a volume group, please remove it manually"
+  fi
 fi
 
 
@@ -246,20 +291,30 @@ fi
 # =========
 
 get_free_space() {
-  if [ "${DEV_TYPE}" == 'device' ] && [ -n "${DEV}" ]; then
+  if [ "${DEV_TYPE}" == 'file' ] || [ -z "${DEV}" ]; then
+    return
+  fi
+
+  if [ "${DEV_TYPE}" == 'device' ]; then
     FREE_SPACE="$(parted "${DEV}" unit B print free \
       | grep 'Free Space' \
       | tail -n1 \
       | awk '{print $3}' \
       | tr -d 'B')"
 
-    if [[ -z "${FREE_SPACE}" ]]; then
-      err_exit "target disk probably doesn't have partition table"
-    fi
+  elif [ "${DEV_TYPE}" == 'volume_group' ]; then
+    FREE_SPACE="$(vgs "${DEV}" --units=B --rows \
+      | grep 'VFree ' \
+      | awk '{print $2}' \
+      | tr -d 'B')"
+  fi
 
-    if [[ "${FREE_SPACE}" -lt "${SIZE}" ]]; then
-      err_exit "not enough unpartitioned space"
-    fi
+  if [[ -z "${FREE_SPACE}" ]]; then
+    err_exit "target disk probably doesn't have partition table"
+  fi
+
+  if [[ "${FREE_SPACE}" -lt "${SIZE}" ]]; then
+    err_exit "not enough unpartitioned space"
   fi
 
   readonly FREE_SPACE
@@ -281,9 +336,10 @@ purge_partitions() {
 get_partitions() {
   case "${DEV_TYPE}" in
   'device' )
-    # find partition numbers to use if partitions are not defined and the
+    # find partition numbers to use only if partitions are not defined and the
     # device is defined
     if [[ -z "${DEV}" ]]; then
+      INST_TYPE='uefi'
       return
     fi
 
@@ -320,8 +376,16 @@ get_partitions() {
 
     [[ -n "${VAR_SIZE}" ]] && VAR_PART="${DEV}$((++last_part))"
     [[ -n "${VAR_SIZE}" ]] && VAR_PART_N="${last_part}"
+    ;;
 
-    sleep 0.3
+  'volume_group' )
+    INST_TYPE='uefi'
+    BOOT_PART="/dev/mapper/${DEV}-${LABEL}_boot"
+    ROOT_PART="/dev/mapper/${DEV}-${LABEL}_root"
+
+    [[ -n "${HOME_SIZE}" ]] && HOME_PART="/dev/mapper/${DEV}-${LABEL}_home"
+    [[ -n "${VAR_SIZE}" ]] && VAR_PART="/dev/mapper/${DEV}-${LABEL}_var"
+
     ;;
 
   'file' )
@@ -342,12 +406,30 @@ get_partitions() {
 
     [[ -n "${VAR_SIZE}" ]] && VAR_PART="${LOOP_DEV}p5"
     [[ -n "${VAR_SIZE}" ]] && VAR_PART_N=5
-    sleep 0.3
     ;;
   esac
+
+  # no idea why this is needed, but without it the script exits
+  sleep 0.3
 }
 
 create_partitions() {
+  if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
+    lvcreate -L "${BOOT_SIZE}" "${DEV}" -n "${LABEL}_boot"
+    lvcreate -L "${ROOT_SIZE}" "${DEV}" -n "${LABEL}_root"
+
+    [[ -n "${HOME_SIZE}" ]] \
+      && lvcreate -L "${HOME_SIZE}" "${DEV}" -n "${LABEL}_home"
+
+    [[ -n "${VAR_SIZE}" ]] \
+      && lvcreate -L "${VAR_SIZE}" "${DEV}" -n "${LABEL}_var"
+
+    sleep 0.3
+    lvscan > /dev/null
+
+    return
+  fi
+
   if [ "${DEV_TYPE}" == 'file' ]; then
     echo '+ preparing vm file...'
     qemu-img create -f raw "${DEV}" "$(( SIZE + 10*1024*1024 ))"
@@ -416,8 +498,9 @@ create_partitions() {
 
   if [ "${DEV_TYPE}" == 'file' ]; then
     losetup -Pf "${DEV}"
-    sleep 0.3
   fi
+
+  sleep 0.3
 }
 
 create_filesystems() {
@@ -571,8 +654,9 @@ install_bootloader() {
   echo '+ installing grub...'
   local dev
   case "${DEV_TYPE}" in
-  'device' ) dev=${DEV} ;;
-  'file'   ) dev=${LOOP_DEV} ;;
+  'device'       ) dev=${DEV} ;;
+  'volume_group' ) dev=${DEV} ;;
+  'file'         ) dev=${LOOP_DEV} ;;
   esac
 
   if [ "${INST_TYPE}" == 'bios' ]; then
@@ -634,7 +718,12 @@ var size             ${VAR_SIZE}
 
 install size         $(numfmt --to=iec-i --suffix=B --format="%.2f" ${SIZE})"
 
-if [ "${DEV_TYPE}" == 'device' ] && [ -n "${DEV}" ]&& [ ${PURGE} == 'false' ]; then
+if [ "${DEV_TYPE}" == 'device' ] && [ -n "${DEV}" ] && [ ${PURGE} == 'false' ]; then
+  echo -n "free space           "
+  numfmt --to=iec-i --suffix=B --format="%.2f" ${FREE_SPACE}
+fi
+
+if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
   echo -n "free space           "
   numfmt --to=iec-i --suffix=B --format="%.2f" ${FREE_SPACE}
 fi
