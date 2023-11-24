@@ -606,18 +606,28 @@ set_fstab() {
   fi
 
   cat > ${ROOT_DIR}/etc/fstab <<EOF
-proc    /proc   proc            rw,nosuid,nodev,noexec,hidepid=2,gid=0  0 0
-sys     /sys    sysfs           rw,nosuid,nodev,noexec                  0 0
-run     /run    tmpfs           rw,nosuid,nodev,mode=0755               0 0
-tmp     /tmp    tmpfs           rw,nosuid,nodev,mode=0777,size=80% 0 0
+proc    /proc      proc    rw,nosuid,nodev,noexec,hidepid=2,gid=0  0 0
+sys     /sys       sysfs   rw,nosuid,nodev,noexec                  0 0
+run     /run       tmpfs   rw,nosuid,nodev,mode=0755               0 0
+tmp     /tmp       tmpfs   rw,nosuid,nodev,mode=0777,size=80%      0 0
 
-shm     /dev/shm        tmpfs   rw,nosuid,noexec,mode=1777              0 0
-devpts  /dev/pts        devpts  rw,nosuid,noexec,mode=0620,gid=5        0 0
-lock    /run/lock       tmpfs   rw,nosuid,nodev,noexec,mode=1777        0 0
+shm     /dev/shm   tmpfs   rw,nosuid,noexec,mode=1777              0 0
+devpts  /dev/pts   devpts  rw,nosuid,noexec,mode=0620,gid=5        0 0
+lock    /run/lock  tmpfs   rw,nosuid,nodev,noexec,mode=1777        0 0
 
-UUID=${UUID_ROOT}      /       ext4    rw,lazytime,noiversion          0 1
-UUID=${uuid_boot}      /boot   ext4    rw,sync,noiversion              0 2
+UUID=${UUID_ROOT}  /      ext4  rw,lazytime,noiversion  0 1
+UUID=${uuid_boot}  /boot  ext4  rw,sync,noiversion      0 2
 EOF
+
+  if [[ -n "${HOME_SIZE}" ]]; then
+    echo "UUID=${UUID_HOME}  /home  ext4  rw,lazytime,noiversion  0 2" \
+      >> ${ROOT_DIR}/etc/fstab
+  fi
+
+  if [[ -n "${VAR_SIZE}" ]]; then
+    echo "UUID=${UUID_VAR}  /var   ext4  rw,lazytime,noiversion  0 2" \
+      >> ${ROOT_DIR}/etc/fstab
+  fi
 }
 
 set_timezone() {
@@ -830,6 +840,7 @@ ${CCMD} apt-get -y --no-install-recommends install linux-image-amd64 zstd
 install_bootloader
 sys_config
 deploy_ssh_key
+${CCMD} apt-get -y clean
 unmount
 
 echo '+ done'
