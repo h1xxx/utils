@@ -337,7 +337,7 @@ partsync() {
     partprobe "${BOOT_DISK}"
     ;;
   esac
-  sleep 0.3
+  sleep 0.5
 }
 
 purge_partitions() {
@@ -345,7 +345,7 @@ purge_partitions() {
   sgdisk --zap-all "${DEV}" && partsync
   dd if=/dev/zero of="${DEV}" bs=1M count=128 >/dev/null 2>&1
   sgdisk -g "${DEV}" && partsync
-  sleep 0.3
+  sleep 0.5
 }
 
 get_partitions() {
@@ -427,7 +427,7 @@ get_partitions() {
   esac
 
   # no idea why this is needed, but without it the script exits
-  sleep 0.3
+  sleep 1
 }
 
 create_partitions() {
@@ -443,7 +443,7 @@ create_partitions() {
     [[ -n "${VAR_SIZE}" ]] \
       && lvcreate -L "${VAR_SIZE}" "${DEV}" -n "${LABEL}_var"
 
-    sleep 0.3
+    sleep 0.5
     lvscan > /dev/null
 
     echo '+ creating boot disk...'
@@ -532,7 +532,7 @@ create_partitions() {
     losetup -Pf "${DEV}"
   fi
 
-  sleep 0.3
+  sleep 0.5
 }
 
 create_filesystems() {
@@ -706,7 +706,7 @@ install_bootloader() {
     -e 's|^#GRUB_TERMINAL=|GRUB_TERMINAL=|' \
     -e 's|^#GRUB_DISABLE_LINUX_UUID=|GRUB_DISABLE_LINUX_UUID=|' \
     -e "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT='$p'|" \
-    /etc/default/grub
+    ${ROOT_DIR}/etc/default/grub
 
   ${CCMD} update-grub
 }
@@ -717,7 +717,7 @@ sys_config() {
   echo 'net.ipv6.conf.all.disable_ipv6 = 1' \
     > ${ROOT_DIR}/etc/sysctl.d/70-disable-ipv6.conf
 
-  sed -i 's|^#PermitRootLogin|PermitRootLogin' ${ROOT_DIR}/etc/ssh/sshd_config
+  sed -i 's|^#PermitRootLogin|PermitRootLogin|' ${ROOT_DIR}/etc/ssh/sshd_config
 }
 
 deploy_ssh_key() {
