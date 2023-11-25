@@ -755,6 +755,10 @@ deploy_ssh_key() {
 
 unmount() {
   echo '+ unmounting...'
+
+  [[ -n "${HOME_SIZE}" ]] && umount ${ROOT_DIR}/home
+  [[ -n "${VAR_SIZE}" ]] && umount ${ROOT_DIR}/var
+
   umount ${ROOT_DIR}/dev/pts/ \
     ${ROOT_DIR}/{boot,dev,proc,sys,var/tmp}/ \
     ${ROOT_DIR}/
