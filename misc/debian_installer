@@ -3,7 +3,7 @@ set -euo pipefail
 set +x
 
 usage() {
-  echo 'usage: dev_install [ARGS]
+  echo "usage: dev_install [ARGS]
 
 -t, --target <path>   path to target disk device, LVM volume group name, or file
 
@@ -31,7 +31,7 @@ examples:
 
 deb_dev_install -t /dev/sdb -b 512M -r 128G 
 deb_dev_install -t /dev/sdb -b 512M -r 64G -u 32G -v 32G -p
-deb_dev_install -t /dev/sdb -b 1G -r 64G --boot-part=/dev/sdb1 --root-part=/dev/sdb2'
+deb_dev_install -t /dev/sdb -b 1G -r 64G --boot-part=/dev/sdb1 --root-part=/dev/sdb2"
   exit 0
 }
 
