@@ -448,14 +448,14 @@ create_partitions() {
   if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
     echo '+ creating logical volumes...'
 
-    lvcreate -L "${BOOT_SIZE}" "${DEV}" -n "${LABEL}_boot"
-    lvcreate -L "${ROOT_SIZE}" "${DEV}" -n "${LABEL}_root"
+    lvcreate -y -W y -L "${BOOT_SIZE}" "${DEV}" -n "${LABEL}_boot"
+    lvcreate -y -W y -L "${ROOT_SIZE}" "${DEV}" -n "${LABEL}_root"
 
     [[ -n "${HOME_SIZE}" ]] \
-      && lvcreate -L "${HOME_SIZE}" "${DEV}" -n "${LABEL}_home"
+      && lvcreate -y -W y -L "${HOME_SIZE}" "${DEV}" -n "${LABEL}_home"
 
     [[ -n "${VAR_SIZE}" ]] \
-      && lvcreate -L "${VAR_SIZE}" "${DEV}" -n "${LABEL}_var"
+      && lvcreate -y -W y -L "${VAR_SIZE}" "${DEV}" -n "${LABEL}_var"
 
     sleep 0.5
     lvscan > /dev/null
@@ -756,15 +756,17 @@ deploy_ssh_key() {
 unmount() {
   echo '+ unmounting...'
 
-  [[ -n "${HOME_SIZE}" ]] && umount ${ROOT_DIR}/home
-  [[ -n "${VAR_SIZE}" ]] && umount ${ROOT_DIR}/var
+  umount ${ROOT_DIR}/var/tmp && sleep 0.5
+
+  [[ -n "${HOME_SIZE}" ]] && umount ${ROOT_DIR}/home && sleep 0.5
+  [[ -n "${VAR_SIZE}" ]] && umount ${ROOT_DIR}/var && sleep 0.5
 
   umount ${ROOT_DIR}/dev/pts/ \
-    ${ROOT_DIR}/{boot,dev,proc,sys,var/tmp}/ \
-    ${ROOT_DIR}/
+    ${ROOT_DIR}/{boot,dev,proc,sys}/ \
+    ${ROOT_DIR}/ && sleep 0.5
 
-  [ "${ENCRYPT}" == 'true' ] && cryptsetup luksClose ${MAP_DEV}
-  [ "${DEV_TYPE}" == 'file' ] && losetup -d "${LOOP_DEV}"
+  [ "${ENCRYPT}" == 'true' ] && cryptsetup luksClose ${MAP_DEV} && sleep 0.5
+  [ "${DEV_TYPE}" == 'file' ] && losetup -d "${LOOP_DEV}" && sleep 0.5
 }
 
 
@@ -865,5 +867,6 @@ ${CCMD} apt-get install -y python3
 ${CCMD} apt-get clean
 unmount
 
+sync
 echo '+ done'
 
