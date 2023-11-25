@@ -756,17 +756,38 @@ deploy_ssh_key() {
 unmount() {
   echo '+ unmounting...'
 
-  umount ${ROOT_DIR}/var/tmp && sleep 0.5
+  echo 'unmounting virtual filesystems...'
+  umount ${ROOT_DIR}/dev/pts && sleep 0.1
+  umount ${ROOT_DIR}/{dev,proc,sys} && sleep 0.1
+  umount ${ROOT_DIR}/var/tmp && sleep 0.1
 
-  [[ -n "${HOME_SIZE}" ]] && umount ${ROOT_DIR}/home && sleep 0.5
-  [[ -n "${VAR_SIZE}" ]] && umount ${ROOT_DIR}/var && sleep 0.5
+  if [[ -n "${HOME_SIZE}" ]]; then
+    echo 'unmounting /home...'
+    umount ${ROOT_DIR}/home && sleep 0.1
+  fi
 
-  umount ${ROOT_DIR}/dev/pts/ \
-    ${ROOT_DIR}/{boot,dev,proc,sys}/ \
-    ${ROOT_DIR}/ && sleep 0.5
+  if [[ -n "${VAR_SIZE}" ]]; then
+    echo 'unmounting /var...'
+    umount ${ROOT_DIR}/var && sleep 0.1
+  fi
 
-  [ "${ENCRYPT}" == 'true' ] && cryptsetup luksClose ${MAP_DEV} && sleep 0.5
-  [ "${DEV_TYPE}" == 'file' ] && losetup -d "${LOOP_DEV}" && sleep 0.5
+  echo 'unmounting /boot...'
+  umount  ${ROOT_DIR}/boot && sleep 0.1
+
+  echo 'unmounting root...'
+  umount  ${ROOT_DIR}/ && sleep 0.1
+
+  if [ "${ENCRYPT}" == 'true' ]; then
+    echo 'closing luks device...'
+    cryptsetup luksClose ${MAP_DEV} && sleep 0.1
+  fi
+
+  if [ "${DEV_TYPE}" == 'file' ]; then
+    echo 'removing loop device...'
+    losetup -d "${LOOP_DEV}" && sleep 0.1
+  fi
+
+  echo done unmounting.
 }
 
 
