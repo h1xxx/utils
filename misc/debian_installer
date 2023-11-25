@@ -9,6 +9,7 @@ usage() {
 
 -l, --label           prefix for LVM logical volumes, partitions and filesystems
 -k, --public-key      path to a public ssh key file to include in image
+-y, --yes             don't ask for permission to continue
 
 -e, --encrypt         encrypt home partition
 -p, --purge-all       remove all existing partitions from device (default is to
@@ -50,11 +51,15 @@ DEV=
 # encrypt the home partition
 PUB_SSH_FILE=
 
+# don't ask to continue
+YES=false
+
 # encrypt the home partition
 ENCRYPT=false
 
 # remove all existing partitions
 PURGE=false
+
 
 # size of partitions and total size
 BOOT_SIZE=
@@ -123,9 +128,9 @@ CCMD="chroot ${ROOT_DIR} env -i DEBIAN_FRONTEND=noninteractive TERM=linux PATH=/
 # parse args
 # ==========
 
-opts=t:l:k:epb:r:h:v:
+opts=t:l:k:yepb:r:h:v:
 
-long=target:,label:,public-key:,encrypt,purge-all,
+long=target:,label:,public-key:,yes,encrypt,purge-all,
 long+=boot-size:,root-size:,home-size:,var-size:,
 long+=boot-part:,root-part:,home-part:,var-part,help
 
@@ -145,6 +150,10 @@ while [[ ${#} -gt 0 ]]; do
   -k | --public-key)
     readonly PUB_SSH_FILE="${2}"
     shift 2
+    ;;
+  -y | --yes)
+    readonly YES=true
+    shift
     ;;
   -e | --encrypt)
     readonly ENCRYPT=true
@@ -802,8 +811,10 @@ if [ -b "${DEV}" ]; then
     | tail -n +2
 fi
 
-printf "\nPress 'Ctrl+c' to abort or 'Enter' to continue..."
-read
+if [[ ${YES} == 'false' ]]; then
+  printf "\nPress 'Ctrl+c' to abort or 'Enter' to continue..."
+  read
+fi
 
 
 # main
