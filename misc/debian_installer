@@ -725,7 +725,9 @@ install_bootloader() {
     ${CCMD} grub-install --efi-directory=/boot/efi --target=x86_64-efi --locales=
   fi
 
-  local p="nomodeset root=LABEL=${LABEL}-root net.ifnames=0"
+  local p="root=LABEL=${LABEL}-root net.ifnames=0"
+  [[ ${DEV_TYPE} != 'device' ]] && p+=' nomodeset console=ttyS0'
+
   sed -i \
     -e 's|^#GRUB_TERMINAL=|GRUB_TERMINAL=|' \
     -e 's|^#GRUB_DISABLE_LINUX_UUID=|GRUB_DISABLE_LINUX_UUID=|' \
