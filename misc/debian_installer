@@ -747,6 +747,8 @@ sys_config() {
 
   sed -i 's|^#PermitRootLogin|PermitRootLogin|' ${ROOT_DIR}/etc/ssh/sshd_config
   rm ${ROOT_DIR}/etc/ssh/ssh_host_{ecdsa,rsa}_key*
+
+  echo "${LABEL}" > ${ROOT_DIR}/etc/hostname
 }
 
 pkg_install() {
