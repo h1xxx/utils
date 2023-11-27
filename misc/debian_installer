@@ -665,6 +665,8 @@ auto eth0
 allow-hotplug eth0
 iface eth0 inet dhcp
   dns-nameservers 9.9.9.9
+
+source /etc/network/interfaces.d/*
 EOF
 
   cat > ${ROOT_DIR}/etc/hosts <<EOF
@@ -745,6 +747,13 @@ sys_config() {
 
   sed -i 's|^#PermitRootLogin|PermitRootLogin|' ${ROOT_DIR}/etc/ssh/sshd_config
   rm ${ROOT_DIR}/etc/ssh/ssh_host_{ecdsa,rsa}_key*
+}
+
+pkg_install() {
+  ${CCMD} apt-get install -y python3
+  [[ ${DEV_TYPE} != 'device' ]] && ${CCMD} apt-get install -y acpid
+
+  ${CCMD} apt-get clean
 }
 
 deploy_ssh_key() {
@@ -885,9 +894,8 @@ ${CCMD} apt-get -y --no-install-recommends install linux-image-amd64 zstd
 
 install_bootloader
 sys_config
+pkg_install
 deploy_ssh_key
-${CCMD} apt-get install -y python3
-${CCMD} apt-get clean
 unmount
 
 sync
