@@ -389,21 +389,29 @@ get_partitions() {
       INST_TYPE='uefi'
     fi
 
+    # add 'p' in /dev/nvme partitions
+    local disk_dev
+    if [[ ${DEV} =~ /dev/nvme* ]]; then
+      disk_dev="${DEV}p"
+    else
+      disk_dev="${DEV}"
+    fi
+
     if [ "${INST_TYPE}" == "bios" ]; then
-      GRUB_PART="${DEV}$((++last_part))"
+      GRUB_PART="${disk_dev}$((++last_part))"
       GRUB_PART_N="${last_part}"
     fi
 
-    BOOT_PART="${DEV}$((++last_part))"
+    BOOT_PART="${disk_dev}$((++last_part))"
     BOOT_PART_N="${last_part}"
 
-    ROOT_PART="${DEV}$((++last_part))"
+    ROOT_PART="${disk_dev}$((++last_part))"
     ROOT_PART_N="${last_part}"
 
-    [[ -n "${HOME_SIZE}" ]] && HOME_PART="${DEV}$((++last_part))"
+    [[ -n "${HOME_SIZE}" ]] && HOME_PART="${disk_dev}$((++last_part))"
     [[ -n "${HOME_SIZE}" ]] && HOME_PART_N="${last_part}"
 
-    [[ -n "${VAR_SIZE}" ]] && VAR_PART="${DEV}$((++last_part))"
+    [[ -n "${VAR_SIZE}" ]] && VAR_PART="${disk_dev}$((++last_part))"
     [[ -n "${VAR_SIZE}" ]] && VAR_PART_N="${last_part}"
     ;;
 
