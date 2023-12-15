@@ -7,6 +7,7 @@ usage() {
 
 -t, --target <path>   path to target disk device, LVM volume group name, or file
 
+-i, --iface           interface for default gateway
 -l, --label           prefix for LVM logical volumes, partitions and filesystems
 -k, --public-key      path to a public ssh key file to include in image
 -y, --yes             don't ask for permission to continue
@@ -14,6 +15,7 @@ usage() {
 -e, --encrypt         encrypt home partition
 -p, --purge-all       remove all existing partitions from device (default is to
                       create new partitions on existing free disk space)
+-u, --uefi            force uefi install
 
 -b, --boot-size       boot partition size
 -r, --root-size       root partition size
@@ -24,6 +26,7 @@ usage() {
 --root-part           existing root partition path to utilize
 --home-part           existing home partition path to utilize
 --var-part            existing var partition path to utilize
+
 
 --help                this help message
 
@@ -48,6 +51,9 @@ err_exit() {
 # target - a path to the disk or file
 DEV=
 
+# main network interface
+IFACE=
+
 # encrypt the home partition
 PUB_SSH_FILE=
 
@@ -59,6 +65,9 @@ ENCRYPT=false
 
 # remove all existing partitions
 PURGE=false
+
+# force uefi
+UEFI_FORCE=false
 
 
 # size of partitions and total size
@@ -128,9 +137,9 @@ CCMD="chroot ${ROOT_DIR} env -i DEBIAN_FRONTEND=noninteractive TERM=linux PATH=/
 # parse args
 # ==========
 
-opts=t:l:k:yepb:r:h:v:
+opts=t:i:l:k:yepub:r:h:v:
 
-long=target:,label:,public-key:,yes,encrypt,purge-all,
+long=target:,iface:,label:,public-key:,yes,encrypt,purge-all,uefi
 long+=boot-size:,root-size:,home-size:,var-size:,
 long+=boot-part:,root-part:,home-part:,var-part,help
 
@@ -141,6 +150,10 @@ while [[ ${#} -gt 0 ]]; do
   case ${key} in
   -t | --target)
     readonly DEV="${2}"
+    shift 2
+    ;;
+  -i | --iface)
+    readonly IFACE="${2}"
     shift 2
     ;;
   -l | --label)
@@ -161,6 +174,10 @@ while [[ ${#} -gt 0 ]]; do
     ;;
   -p | --purge-all)
     readonly PURGE=true
+    shift
+    ;;
+  -u | --uefi)
+    readonly UEFI_FORCE=true
     shift
     ;;
   -b | --boot-size)
@@ -211,6 +228,10 @@ while [[ ${#} -gt 0 ]]; do
     ;;
   esac
 done
+
+if [[ -z "${IFACE}" ]]; then
+    err_exit 'no network interface defined'
+fi
 
 if [[ -z "${DEV}" ]]; then
   if [[ -z "${BOOT_PART}" ]] || [[ -z "${ROOT_PART}" ]] ; then
@@ -386,6 +407,10 @@ get_partitions() {
       last_part=0
       INST_TYPE='bios'
     else
+      INST_TYPE='uefi'
+    fi
+
+    if [ "${UEFI_FORCE}" == 'true' ]; then
       INST_TYPE='uefi'
     fi
 
@@ -620,11 +645,15 @@ set_fstab() {
   echo '+ configuring fstab...'
 
   local uuid_boot
+  local boot_fs_type='ext4'
+
   if [ "${INST_TYPE}" == 'bios' ]; then
     uuid_boot="${UUID_BOOT}"
 
   elif [ "${INST_TYPE}" == 'uefi' ]; then
-    uuid_boot="${UUID_BOOT_FAT}"
+    uuid_boot="${UUID_BOOT_FAT^^}"
+    uuid_boot="${uuid_boot:0:4}-${uuid_boot:4:8}"
+    boot_fs_type='vfat'
   fi
 
   cat > ${ROOT_DIR}/etc/fstab <<EOF
@@ -638,7 +667,7 @@ devpts  /dev/pts   devpts  rw,nosuid,noexec,mode=0620,gid=5        0 0
 lock    /run/lock  tmpfs   rw,nosuid,nodev,noexec,mode=1777        0 0
 
 UUID=${UUID_ROOT}  /      ext4  rw,lazytime,noiversion  0 1
-UUID=${uuid_boot}  /boot  ext4  rw,sync,noiversion      0 2
+UUID=${uuid_boot}  /boot  ${boot_fs_type}  rw,sync,noiversion      0 2
 EOF
 
   if [[ -n "${HOME_SIZE}" ]]; then
@@ -669,9 +698,9 @@ set_network() {
 auto lo
 iface lo inet loopback
 
-auto eth0
-allow-hotplug eth0
-iface eth0 inet dhcp
+auto ${IFACE}
+allow-hotplug ${IFACE}
+iface ${IFACE} inet dhcp
   dns-nameservers 9.9.9.9
 
 source /etc/network/interfaces.d/*
@@ -730,12 +759,11 @@ install_bootloader() {
     ${CCMD} grub-install --target=i386-pc ${dev} --locales=
 
   elif [ "${INST_TYPE}" == 'uefi' ]; then
-    mkdir -p "${ROOT_DIR}/boot/efi"
     ${CCMD} apt-get -y install grub-efi-amd64
-    ${CCMD} grub-install --efi-directory=/boot/efi --target=x86_64-efi --locales=
+    ${CCMD} grub-install --efi-directory=/boot --target=x86_64-efi --locales=
   fi
 
-  local p="root=LABEL=${LABEL}-root net.ifnames=0"
+  local p="root=LABEL=${LABEL}-root"
   [[ ${DEV_TYPE} != 'device' ]] && p+=' nomodeset console=ttyS0'
 
   sed -i \
