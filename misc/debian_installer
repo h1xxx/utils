@@ -139,7 +139,7 @@ CCMD="chroot ${ROOT_DIR} env -i DEBIAN_FRONTEND=noninteractive TERM=linux PATH=/
 
 opts=t:i:l:k:yepub:r:h:v:
 
-long=target:,iface:,label:,public-key:,yes,encrypt,purge-all,uefi
+long=target:,iface:,label:,public-key:,yes,encrypt,purge-all,uefi,
 long+=boot-size:,root-size:,home-size:,var-size:,
 long+=boot-part:,root-part:,home-part:,var-part,help
 
