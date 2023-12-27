@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"sort"
 
 	str "strings"
@@ -35,6 +36,11 @@ type serverT struct {
 }
 
 func main() {
+	var loc string
+	if len(os.Args) > 1 {
+		loc = os.Args[1]
+	}
+
 	url := "https://airvpn.org/api/status/"
 	req, err := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "curl/7.74.0")
@@ -65,7 +71,7 @@ func main() {
 		s.Location = str.TrimSuffix(s.Location, " City")
 		s.FreeBW = s.BandwithMax - s.Bandwith
 
-			all = append(all, s)
+		all = append(all, s)
 
 		switch s.Continent {
 		case "Europe":
@@ -77,6 +83,12 @@ func main() {
 		case "Oceania":
 			oceania = append(oceania, s)
 		}
+	}
+
+	if len(all) < 64 {
+		msg := "error: suspiciously small number of servers (%s)\n"
+		fmt.Printf(msg, len(all))
+		os.Exit(1)
 	}
 
 	sort.Slice(all, func(i, j int) bool {
@@ -99,7 +111,38 @@ func main() {
 		return oceania[i].Load >= oceania[j].Load
 	})
 
-	header:="server name     cc  city      bandwidth users load  stat  vpn name"
+	header := "server name     cc  city      bandwidth users "
+	header += "load  stat  vpn name"
+
+	if loc != "" {
+		switch loc {
+		case "all":
+			for _, s := range all {
+				printServer(s)
+			}
+		case "eu":
+			for _, s := range eu {
+				printServer(s)
+			}
+		case "us":
+			for _, s := range america {
+				printServer(s)
+			}
+		case "asia":
+			for _, s := range asia {
+				printServer(s)
+			}
+		case "oceania":
+			for _, s := range oceania {
+				printServer(s)
+			}
+		default:
+			fmt.Printf("error: incorrect arg. must be one of: ")
+			fmt.Println("all, eu, us, asia, oceania")
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 
 	fmt.Println("+ america")
 	fmt.Println(header)
