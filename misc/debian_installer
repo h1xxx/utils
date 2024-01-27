@@ -2,6 +2,17 @@
 set -euo pipefail
 set +x
 
+
+# todo:
+# check for umask 0022
+# check for chmod 644 /etc/resolv.conf in host sys (apt needs this)
+# add check for numfmt, parted, mkfs.ext4, perl
+# add check for /usr/share/keyrings/debian-archive-keyring.gpg
+# add check for mount to be from util-linux, not busybox
+# disable "ERROR: label prefix 'main' already exists" if the disk is about to be purged
+# handle case when no purge and no partition table on disk (now it's an error)
+# list all deps if one is missing
+
 usage() {
   echo "usage: dev_install [ARGS]
 
@@ -54,7 +65,7 @@ DEV=
 # main network interface
 IFACE=
 
-# encrypt the home partition
+# public ssh key to put in authorized_hosts
 PUB_SSH_FILE=
 
 # don't ask to continue
@@ -764,7 +775,8 @@ install_bootloader() {
   fi
 
   local p="root=LABEL=${LABEL}-root"
-  [[ ${DEV_TYPE} != 'device' ]] && p+=' nomodeset console=ttyS0'
+  [[ ${DEV_TYPE} != 'device' ]] && p+=' nomodeset'
+  p+=' console=ttyS0,115200n8'
 
   sed -i \
     -e 's|^#GRUB_TERMINAL=|GRUB_TERMINAL=|' \
@@ -807,7 +819,7 @@ unmount() {
 
   echo 'unmounting virtual filesystems...'
   umount ${ROOT_DIR}/dev/pts && sleep 0.1
-  umount ${ROOT_DIR}/{dev,proc,sys} && sleep 0.1
+  umount ${ROOT_DIR}/{dev,sys} && sleep 0.1
   umount ${ROOT_DIR}/var/tmp && sleep 0.1
 
   if [[ -n "${HOME_SIZE}" ]]; then
@@ -822,6 +834,9 @@ unmount() {
 
   echo 'unmounting /boot...'
   umount  ${ROOT_DIR}/boot && sleep 0.1
+
+  echo 'unmounting /proc...'
+  umount ${ROOT_DIR}/proc && sleep 0.1
 
   echo 'unmounting root...'
   umount  ${ROOT_DIR}/ && sleep 0.1
