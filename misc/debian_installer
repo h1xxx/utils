@@ -804,6 +804,8 @@ pkg_install() {
   ${CCMD} apt-get install -y python3
   [[ ${DEV_TYPE} != 'device' ]] && ${CCMD} apt-get install -y acpid
 
+  [[ ${ENCRYPT} == 'true' ]] && ${CCMD} apt-get install -y cryptsetup
+
   ${CCMD} apt-get clean
 }
 
