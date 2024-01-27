@@ -12,6 +12,7 @@ set +x
 # disable "ERROR: label prefix 'main' already exists" if the disk is about to be purged
 # handle case when no purge and no partition table on disk (now it's an error)
 # list all deps if one is missing
+# encrypt and yes should be exclusive (password needed)
 
 usage() {
   echo "usage: dev_install [ARGS]
@@ -681,7 +682,7 @@ UUID=${UUID_ROOT}  /      ext4  rw,lazytime,noiversion  0 1
 UUID=${uuid_boot}  /boot  ${boot_fs_type}  rw,sync,noiversion      0 2
 EOF
 
-  if [[ -n "${HOME_SIZE}" ]]; then
+  if [[ -n "${HOME_SIZE}" ]] && [[ "${ENCRYPT}" == 'false' ]]; then
     echo "UUID=${UUID_HOME}  /home  ext4  rw,lazytime,noiversion  0 2" \
       >> ${ROOT_DIR}/etc/fstab
   fi
