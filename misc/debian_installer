@@ -619,7 +619,7 @@ create_filesystems() {
         --iter-time 5000 \
         --batch-mode \
         --uuid="${UUID_HOME}" \
-        luksFormat "${UUID_HOME}"
+        luksFormat "${HOME_PART}"
       echo 'Enter the password again to mount encrypted home...'
       cryptsetup luksOpen --allow-discards "${HOME_PART}" ${MAP_DEV}
       mkfs.ext4 -F -L "${LABEL}-home" -U "${UUID_HOME}" "${PART_ENC}"
