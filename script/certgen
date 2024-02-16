@@ -1,0 +1,25 @@
+#!/bin/bash
+set -euo pipefail
+
+certname=$1
+domain=$2
+
+mkdir -p new_cert
+cd new_cert
+
+# more info in `man req`
+openssl req \
+  -batch \
+  -subj "/C=PL/CN=${certname}" \
+  -addext "subjectAltName = DNS:${domain}" \
+  -nodes \
+  -newkey rsa:2048 \
+  -x509 \
+  -days 3650 \
+  -keyout ${certname}.key \
+  -out ${certname}.crt
+
+cat ${certname}.crt ${certname}.key > ${certname}.pem
+chmod 600 ${certname}.pem
+openssl x509 -in ${certname}.pem -pubkey -noout > ${certname}.pub
+

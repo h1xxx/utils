@@ -1,0 +1,14 @@
+sqlite
+postgres update, insert
+postgres update, insert + hugepages
+
+set of benchmarks also in qemu vm
+tap, vs no tap
+hugepages vs no hugepages
+io_uring vs no_uring
+
+create interfaces and set masquarade and many iptables rules via those
+interfaces to test routing speed with iperf, confirm with traceroute and
+iptables if all interfaces are taking part in the exchange
+
+

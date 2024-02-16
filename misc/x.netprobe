@@ -1,0 +1,35 @@
+#!/bin/bash
+
+. ./xlib.sh
+
+echof white '### UDP'
+
+echof white 'google dns'
+ncat -w3 -v -u -n -z 8.8.8.8 53
+
+echof white 'pia de udp 1197 (openvpn)'
+ncat -w3 -v -u -n -z 185.220.70.171 1197
+
+echof white '### TCP'
+
+echof white 'google dns'
+echo 'exit' | telnet 8.8.8.8 53 | head -n2
+
+echof white 'portquiz.net tcp 22'
+echo 'exit' | telnet 52.47.209.216 22 | head -n2
+
+echof white 'portquiz.net tcp 443'
+echo 'exit' | telnet 52.47.209.216 443 | head -n2
+
+echof white 'portquiz.net tcp 501'
+echo 'exit' | telnet 52.47.209.216 501 | head -n2
+
+echof white '### DNS'
+
+echof white 'pia de 185.220.70.136'
+dns_count=$(host germany.privateinternetaccess.com | grep -c 185.220.70.136)
+if [ $dns_count == 1 ]; then
+	echo found dns entry
+else
+	echo dns blocked
+fi
