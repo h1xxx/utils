@@ -1,0 +1,92 @@
+#!/bin/bash
+set -euo pipefail
+
+# script that gets a public IP from Orange Funbox 6 router
+
+FUNBOX_HOST='192.168.1.1'
+USER='admin'
+PASSWORD='xxxxxxx'
+COOKIES="${HOME}/.cache/curl/cookies"
+CONTEXT_ID_FILE="${HOME}/.cache/curl/funbox_context_id"
+CONTEXT_ID=''
+WAITTIME=''
+
+mkdir -p "$(dirname "${COOKIES}")"
+
+login_req() {
+  local q resp
+  local auth_type='Authorization: X-Sah-Login'
+  local mime_type='Content-Type: application/x-sah-ws-4-call+json'
+
+  q='{"service":"sah.Device.Information","method":"createContext","parameters":{"applicationName":"webui","username":"%s","password":"%s"}}'
+  q="$(printf "${q}" "${USER}" "${PASSWORD}")"
+
+  resp="$(curl -H "${auth_type}" -H "${mime_type}" --cookie-jar "${COOKIES}" \
+    -d "${q}" -s http://${FUNBOX_HOST}/)"
+
+  if [[ -z "${resp}" ]]; then
+    echo "ERROR: can't log in (empty response)"
+    return 1
+  fi
+
+  CONTEXT_ID="$(jq -r .data.contextID <<< "${resp}" | awk 'length($0)==64')"
+
+  if [[ -z "${CONTEXT_ID}" ]]; then
+    echo "ERROR: can't log in (empty context id)"
+    echo 'Response:'
+    jq . <<< "${resp}"
+
+    WAITTIME="$(jq -r .errors[0].waittime <<< "${resp}")"
+
+    return 1
+  fi
+  sleep 1
+}
+
+login() {
+  while [[ -z "${CONTEXT_ID}" ]]; do
+    if ! login_req; then
+      wait=30
+      
+      if [[ "${WAITTIME}" != 'null' ]] && [[ "${WAITTIME}" -gt 10 ]]; then
+        wait="$(( WAITTIME++ ))"
+      fi
+      sleep ${wait}
+
+      if [[ "${SECONDS}" -gt 120 ]]; then
+        echo 'ERROR: timeout'
+        exit 1
+      fi
+    fi
+  done
+  echo "${CONTEXT_ID}" > "${CONTEXT_ID_FILE}"
+}
+
+ip_req() {
+  curl -H "X-Context: ${context_id}" -H "${mime_type}" --cookie "${COOKIES}" \
+    -d '{"service":"NMC","method":"getWANStatus","parameters":{}}' -s \
+    http://${FUNBOX_HOST}/ws \
+  | jq -r .data.IPAddress
+}
+
+get_public_ip() {
+  local mime_type='Content-Type: application/x-sah-ws-4-call+json'
+  local context_id resp
+
+  if [[ ! -f "${CONTEXT_ID_FILE}" ]]; then
+    login
+  fi
+  context_id="$(<"${CONTEXT_ID_FILE}")"
+
+  resp="$(ip_req)"
+  if [[ "${resp}" == 'null' ]]; then
+    login
+    resp="$(ip_req)"
+  fi
+
+  echo "${resp}" | grep -E '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$'
+}
+
+get_public_ip
+
+
