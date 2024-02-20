@@ -76,11 +76,13 @@ get_public_ip() {
   if [[ ! -f "${CONTEXT_ID_FILE}" ]]; then
     login
   fi
-  context_id="$(<"${CONTEXT_ID_FILE}")"
 
+  context_id="$(<"${CONTEXT_ID_FILE}")"
   resp="$(ip_req)"
+
   if [[ "${resp}" == 'null' ]]; then
     login
+    context_id="$(<"${CONTEXT_ID_FILE}")"
     resp="$(ip_req)"
   fi
 
