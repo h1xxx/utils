@@ -1,17 +1,29 @@
 #!/bin/bash
 set -euo pipefail
 
+# usage:
+# ./certgen <cert_filename> <domain>
+#
+# if domain is '*' then wildcard cert is generated for a few TLD
+
+
 certname=$1
 domain=$2
 
-mkdir -p new_cert
+mkdir new_cert
 cd new_cert
+
+if [[ "${domain}" == '*' ]]; then
+  alt_name='subjectAltName = DNS:*.lan,DNS:*.com,DNS:*.org,DNS:*.net'
+else
+  alt_name="subjectAltName = DNS:${domain}"
+fi
 
 # more info in `man req`
 openssl req \
   -batch \
   -subj "/C=PL/CN=${certname}" \
-  -addext "subjectAltName = DNS:${domain}" \
+  -addext "${alt_name}" \
   -nodes \
   -newkey rsa:2048 \
   -x509 \
