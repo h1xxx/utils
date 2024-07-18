@@ -1,0 +1,41 @@
+fileren
+=======
+
+A small utility to recursively rename files and directories to a uniform
+filename format. Discards all the characters in the filename that need to be
+escaped on the shell and lowercases all the letters.
+
+If the path to be changed ends with a '/' character then only the content of
+this path is renamed.
+
+Characters replaced:
+
+' ' => _
+ (  => _
+ [  => _
+ {  => _
+ )  => _
+ ]  => _
+ }  => _
+ ,  => _
+ &  => and
+ $  => S
+ •  => -
+' ~ ' => -
+
+Characters removed:
+ \
+ '
+ ’
+ ´
+ #
+ !
+ ?
+
+
+usage
+=====
+
+make
+./fileren <path>
+
