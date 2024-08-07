@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-set +x
 
 
 # todo:
@@ -20,11 +19,13 @@ usage() {
 -t, --target <path>   path to target disk device, LVM volume group name, or file
 
 -i, --iface           interface for default gateway
--l, --label           prefix for LVM logical volumes, partitions and filesystems
+-l, --label           prefix for LVM logical volumes, partitions, encrypted
+                      devices, and filesystems; also a hostname
 -k, --public-key      path to a public ssh key file to include in image
 -y, --yes             don't ask for permission to continue
 
--e, --encrypt         encrypt home partition
+-e, --encrypt-home    encrypt home partition
+-w, --encrypt-root    encrypt whole root partition
 -p, --purge-all       remove all existing partitions from device (default is to
                       create new partitions on existing free disk space)
 -u, --uefi            force uefi install
@@ -73,7 +74,10 @@ PUB_SSH_FILE=
 YES=false
 
 # encrypt the home partition
-ENCRYPT=false
+ENCRYPT_HOME=false
+
+# encrypt the whole root partition
+ENCRYPT_ROOT=false
 
 # remove all existing partitions
 PURGE=false
@@ -127,9 +131,8 @@ LOOP_DEV=
 # prefix for labeling partitions and filesystems
 LABEL=
 
-# dev mapper name for encrypted home
-MAP_DEV=tmp_debootstrap_home
-PART_ENC="/dev/mapper/${MAP_DEV}"
+# dev mapper name for encrypted home or root
+MAP_DEV=
 
 command -v uuidgen >/dev/null || err_exit 'uuidgen from uuid-runtime missing'
 
@@ -145,13 +148,17 @@ UUID_VAR="$(uuidgen | sed 's|.*-.*-.*-.*-.\{4\}|00000000-0000-0000-0000-0000|')"
 # chroot command interpreter
 CCMD="chroot ${ROOT_DIR} env -i DEBIAN_FRONTEND=noninteractive TERM=linux PATH=/usr/bin:/usr/sbin"
 
+# repositories for apt: main contrib non-free non-free-firmware
+APT_REPOS='main'
+
 
 # parse args
 # ==========
 
-opts=t:i:l:k:yepub:r:h:v:
+opts=t:i:l:k:yewpub:r:h:v:
 
-long=target:,iface:,label:,public-key:,yes,encrypt,purge-all,uefi,
+long=target:,iface:,label:,public-key:,yes,encrypt-home,encrypt-root,purge-all,
+long+=uefi,
 long+=boot-size:,root-size:,home-size:,var-size:,
 long+=boot-part:,root-part:,home-part:,var-part,help
 
@@ -180,8 +187,12 @@ while [[ ${#} -gt 0 ]]; do
     readonly YES=true
     shift
     ;;
-  -e | --encrypt)
-    readonly ENCRYPT=true
+  -e | --encrypt-home)
+    readonly ENCRYPT_HOME=true
+    shift
+    ;;
+  -w | --encrypt-root)
+    readonly ENCRYPT_ROOT=true
     shift
     ;;
   -p | --purge-all)
@@ -241,6 +252,14 @@ while [[ ${#} -gt 0 ]]; do
   esac
 done
 
+if [ ${ENCRYPT_ROOT} == 'true' ]; then
+  MAP_DEV=${LABEL}_root_crypt
+elif [ ${ENCRYPT_HOME} == 'true' ]; then
+  MAP_DEV=${LABEL}_home_crypt
+fi
+
+PART_ENC="/dev/mapper/${MAP_DEV}"
+
 if [[ -z "${IFACE}" ]]; then
     err_exit 'no network interface defined'
 fi
@@ -254,6 +273,9 @@ else
     err_exit "either target device or root+boot partition paths must be defined"
   fi
 fi
+
+# todo: add test for root encryption to exclude separate var and home parts
+# todo: add a test for MAP_DEV mapper device name existing
 
 if [[ "${DEV}" =~ /dev/[sn].* ]]; then
   DEV_TYPE='device'
@@ -279,7 +301,7 @@ fi
 SIZE="$(( BOOT_SIZE_B + ROOT_SIZE_B + HOME_SIZE_B + VAR_SIZE_B ))"
 
 # make sure that these global vars are readonly from now on
-readonly DEV PUB_SSH_FILE ENCRYPT PURGE \
+readonly DEV PUB_SSH_FILE ENCRYPT_HOME ENCRYPT_ROOT PURGE \
   BOOT_SIZE ROOT_SIZE HOME_SIZE VAR_SIZE SIZE \
   ROOT_DIR DEV_TYPE \
   UUID_GRUB UUID_BOOT UUID_BOOT_FAT UUID_ROOT UUID_HOME UUID_VAR
@@ -321,19 +343,19 @@ if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
   lvdisplay \
   | grep '  LV Name  ' \
   | grep -q \
-    -e ${LABEL}_grub \
-    -e ${LABEL}_boot \
-    -e ${LABEL}_root \
-    -e ${LABEL}_home \
-    -e ${LABEL}_var \
+    -e ${LABEL}-grub \
+    -e ${LABEL}-boot \
+    -e ${LABEL}-root \
+    -e ${LABEL}-home \
+    -e ${LABEL}-var \
   && err_exit "logical volumes with prefix '${LABEL}' already exist"
 
   if [[ ${DEV} == *-* ]]; then
     err_exit "volume group name can't have a dash in it"
   fi
 
-  if [[ ${LABEL} == *-* ]]; then
-    err_exit "label prefix can't have a dash in it"
+  if [[ ${DEV} == *_* ]]; then
+    err_exit "volume group name can't have an underscore in it"
   fi
 
   if [[ ${PURGE} == 'true' ]]; then
@@ -454,13 +476,13 @@ get_partitions() {
 
   'volume_group' )
     INST_TYPE='bios'
-    BOOT_DISK="/dev/mapper/${DEV}-${LABEL}_boot"
-    GRUB_PART="/dev/mapper/${DEV}-${LABEL}_boot1"
-    BOOT_PART="/dev/mapper/${DEV}-${LABEL}_boot2"
-    ROOT_PART="/dev/mapper/${DEV}-${LABEL}_root"
+    BOOT_DISK="/dev/mapper/${DEV}-${LABEL}-boot"
+    GRUB_PART="/dev/mapper/${DEV}-${LABEL}-boot1"
+    BOOT_PART="/dev/mapper/${DEV}-${LABEL}-boot2"
+    ROOT_PART="/dev/mapper/${DEV}-${LABEL}-root"
 
-    [[ -n "${HOME_SIZE}" ]] && HOME_PART="/dev/mapper/${DEV}-${LABEL}_home"
-    [[ -n "${VAR_SIZE}" ]] && VAR_PART="/dev/mapper/${DEV}-${LABEL}_var"
+    [[ -n "${HOME_SIZE}" ]] && HOME_PART="/dev/mapper/${DEV}-${LABEL}-home"
+    [[ -n "${VAR_SIZE}" ]] && VAR_PART="/dev/mapper/${DEV}-${LABEL}-var"
 
     ;;
 
@@ -493,14 +515,14 @@ create_partitions() {
   if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
     echo '+ creating logical volumes...'
 
-    lvcreate -y -W y -L "${BOOT_SIZE}" "${DEV}" -n "${LABEL}_boot"
-    lvcreate -y -W y -L "${ROOT_SIZE}" "${DEV}" -n "${LABEL}_root"
+    lvcreate -y -W y -L "${BOOT_SIZE}" "${DEV}" -n "${LABEL}-boot"
+    lvcreate -y -W y -L "${ROOT_SIZE}" "${DEV}" -n "${LABEL}-root"
 
     [[ -n "${HOME_SIZE}" ]] \
-      && lvcreate -y -W y -L "${HOME_SIZE}" "${DEV}" -n "${LABEL}_home"
+      && lvcreate -y -W y -L "${HOME_SIZE}" "${DEV}" -n "${LABEL}-home"
 
     [[ -n "${VAR_SIZE}" ]] \
-      && lvcreate -y -W y -L "${VAR_SIZE}" "${DEV}" -n "${LABEL}_var"
+      && lvcreate -y -W y -L "${VAR_SIZE}" "${DEV}" -n "${LABEL}-var"
 
     sleep 0.5
     lvscan > /dev/null
@@ -567,8 +589,13 @@ create_partitions() {
   # name the root partition
   sgdisk -c "${ROOT_PART_N}:${LABEL}-root" "${DEV}" && partsync
 
-  # mark the root partition as linux filesystem
-  sgdisk -t "${ROOT_PART_N}:8300" "${DEV}" && partsync
+  if [ ${ENCRYPT_ROOT} == 'false' ]; then
+    # mark the root partition as linux filesystem
+    sgdisk -t "${ROOT_PART_N}:8300" "${DEV}" && partsync
+  else
+    # mark the root partition as linux luks partition
+    sgdisk -t "${ROOT_PART_N}:8309" "${DEV}" && partsync
+  fi
 
   if [[ -n "${HOME_SIZE}" ]]; then
     echo '+ creating home partition...'
@@ -577,7 +604,6 @@ create_partitions() {
     sgdisk -t "${HOME_PART_N}:8300" "${DEV}" && partsync
     sgdisk -c "${HOME_PART_N}:${LABEL}-home" "${DEV}" && partsync
   fi
-
 
   if [[ -n "${VAR_SIZE}" ]]; then
     echo '+ creating var partition...'
@@ -603,20 +629,22 @@ create_filesystems() {
     mkfs.fat -i "${UUID_BOOT_FAT}" -n "${LABEL}-boot" -F32 "${BOOT_PART}"
   fi
 
-  echo '+ creating root filesystem...'
-  mkfs.ext4 -F -L "${LABEL}-root" -U "${UUID_ROOT}" "${ROOT_PART}"
+  if [ ${ENCRYPT_ROOT} == 'false' ]; then
+    echo '+ creating root filesystem...'
+    mkfs.ext4 -F -L "${LABEL}-root" -U "${UUID_ROOT}" "${ROOT_PART}"
+  fi
 
   if [[ -n "${HOME_SIZE}" ]]; then
     echo '+ creating home filesystem...'
-    if [ "${ENCRYPT}" == 'false' ]; then
+    if [ ${ENCRYPT_HOME} == 'false' ]; then
       mkfs.ext4 -F -L "${LABEL}-home" -U "${UUID_HOME}" "${HOME_PART}"
-    else
+    elif [ ${ENCRYPT_HOME} == 'true' ]; then
       cryptsetup -v \
         --type luks2 \
-        --hash sha512 \
         --cipher aes-xts-plain64 \
-        --key-size 512 \
         --pbkdf argon2id \
+        --hash sha512 \
+        --key-size 512 \
         --iter-time 5000 \
         --batch-mode \
         --uuid="${UUID_HOME}" \
@@ -627,6 +655,23 @@ create_filesystems() {
     fi
   fi
 
+  if [ ${ENCRYPT_ROOT} == 'true' ]; then
+    cryptsetup -v \
+      --type luks2 \
+      --cipher aes-xts-plain64 \
+      --pbkdf argon2id \
+      --hash sha512 \
+      --key-size 512 \
+      --iter-time 5000 \
+      --batch-mode \
+      --uuid="${UUID_ROOT}" \
+      luksFormat "${ROOT_PART}"
+    echo 'Enter the password again to mount encrypted root...'
+    cryptsetup luksOpen --allow-discards "${ROOT_PART}" ${MAP_DEV}
+    mkfs.ext4 -F -L "${MAP_DEV}" -U "${UUID_ROOT}" "${PART_ENC}"
+  fi
+      #--pbkdf pbkdf2 \
+
   if [[ -n "${VAR_SIZE}" ]]; then
     echo '+ creating var filesystem...'
     mkfs.ext4 -F -L "${LABEL}-var" -U "${UUID_VAR}" "${VAR_PART}"
@@ -636,12 +681,18 @@ create_filesystems() {
 mount_partitions() {
   echo '+ mounting partitions...'
   mkdir -p "${ROOT_DIR}"
-  mount -o sync "${ROOT_PART}" "${ROOT_DIR}"
+
+  if [ "${ENCRYPT_ROOT}" == true ]; then
+    mount -o sync "${PART_ENC}" "${ROOT_DIR}"
+  else
+    mount -o sync "${ROOT_PART}" "${ROOT_DIR}"
+  fi
+
   mkdir -p ${ROOT_DIR}/{boot,home,var}
   mount -o sync "${BOOT_PART}" "${ROOT_DIR}/boot"
 
   if [[ -n "${HOME_SIZE}" ]]; then
-    if [ "${ENCRYPT}" == true ]; then
+    if [ "${ENCRYPT_HOME}" == true ]; then
       mount -o sync "${PART_ENC}" "${ROOT_DIR}/home"
     else
       mount -o sync "${HOME_PART}" "${ROOT_DIR}/home"
@@ -682,7 +733,7 @@ UUID=${UUID_ROOT}  /      ext4  rw,lazytime,noiversion  0 1
 UUID=${uuid_boot}  /boot  ${boot_fs_type}  rw,sync,noiversion      0 2
 EOF
 
-  if [[ -n "${HOME_SIZE}" ]] && [[ "${ENCRYPT}" == 'false' ]]; then
+  if [[ -n "${HOME_SIZE}" ]] && [[ "${ENCRYPT_HOME}" == 'false' ]]; then
     echo "UUID=${UUID_HOME}  /home  ext4  rw,lazytime,noiversion  0 2" \
       >> ${ROOT_DIR}/etc/fstab
   fi
@@ -726,9 +777,9 @@ EOF
 set_apt() {
   echo '+ configuring apt...'
   cat > ${ROOT_DIR}/etc/apt/sources.list <<EOF
-deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian-security/ bookworm-security main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian bookworm ${APT_REPOS}
+deb http://deb.debian.org/debian-security/ bookworm-security ${APT_REPOS}
+deb http://deb.debian.org/debian bookworm-updates ${APT_REPOS}
 EOF
   ${CCMD} apt-get update
 }
@@ -772,16 +823,29 @@ install_bootloader() {
 
   elif [ "${INST_TYPE}" == 'uefi' ]; then
     ${CCMD} apt-get -y install grub-efi-amd64
-    ${CCMD} grub-install --efi-directory=/boot --target=x86_64-efi --locales=
+    ${CCMD} grub-install --efi-directory=/boot --target=x86_64-efi --locales= --bootloader-id=debian
   fi
 
-  local p="root=LABEL=${LABEL}-root"
+  # default linux cmdline parameters for grub
+  local p
+  if [ "${ENCRYPT_ROOT}" == true ]; then
+    p="root=LABEL=${MAP_DEV}"
+  else
+    p="root=LABEL=${LABEL}-root"
+  fi
   [[ ${DEV_TYPE} != 'device' ]] && p+=' nomodeset'
   p+=' console=ttyS0,115200n8'
+  p+=' console=tty0'
+
+  if [ "${ENCRYPT_ROOT}" == true ]; then
+    echo "${MAP_DEV} PARTLABEL=${LABEL}-root none luks" > ${ROOT_DIR}/etc/crypttab
+    ${CCMD} apt-get -y install cryptsetup-initramfs
+    #${CCMD} update-initramfs -u
+  fi
 
   sed -i \
-    -e 's|^#GRUB_TERMINAL=|GRUB_TERMINAL=|' \
     -e 's|^#GRUB_DISABLE_LINUX_UUID=|GRUB_DISABLE_LINUX_UUID=|' \
+    -e 's|^#GRUB_TERMINAL=|GRUB_TERMINAL=|' \
     -e "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT='$p'|" \
     ${ROOT_DIR}/etc/default/grub
 
@@ -797,6 +861,9 @@ sys_config() {
   sed -i 's|^#PermitRootLogin|PermitRootLogin|' ${ROOT_DIR}/etc/ssh/sshd_config
   rm ${ROOT_DIR}/etc/ssh/ssh_host_{ecdsa,rsa}_key*
 
+  mkdir ${ROOT_DIR}/etc/systemd/system/getty@.service.d
+  echo -e '[Service]\nTTYVTDisallocate=no' > ${ROOT_DIR}/etc/systemd/system/getty@.service.d/noclear.conf
+
   echo "${LABEL}" > ${ROOT_DIR}/etc/hostname
 }
 
@@ -804,7 +871,7 @@ pkg_install() {
   ${CCMD} apt-get install -y python3
   [[ ${DEV_TYPE} != 'device' ]] && ${CCMD} apt-get install -y acpid
 
-  [[ ${ENCRYPT} == 'true' ]] && ${CCMD} apt-get install -y cryptsetup
+  [[ ${ENCRYPT_HOME} == 'true' ]] && ${CCMD} apt-get install -y cryptsetup
 
   ${CCMD} apt-get clean
 }
@@ -821,6 +888,9 @@ unmount() {
   echo '+ unmounting...'
 
   echo 'unmounting virtual filesystems...'
+  if [ "${INST_TYPE}" == 'uefi' ]; then
+    ${CCMD} umount /sys/firmware/efi/efivars
+  fi
   umount ${ROOT_DIR}/dev/pts && sleep 0.1
   umount ${ROOT_DIR}/{dev,sys} && sleep 0.1
   umount ${ROOT_DIR}/var/tmp && sleep 0.1
@@ -844,7 +914,7 @@ unmount() {
   echo 'unmounting root...'
   umount  ${ROOT_DIR}/ && sleep 0.1
 
-  if [ "${ENCRYPT}" == 'true' ]; then
+  if [ "${ENCRYPT_HOME}" == 'true' ]; then
     echo 'closing luks device...'
     cryptsetup luksClose ${MAP_DEV} && sleep 0.1
   fi
@@ -937,6 +1007,9 @@ mount --bind /dev/pts ${ROOT_DIR}/dev/pts
 mount --bind /proc ${ROOT_DIR}/proc
 mount --bind /sys ${ROOT_DIR}/sys
 mount --types tmpfs tmpfs ${ROOT_DIR}/var/tmp
+if [ "${INST_TYPE}" == 'uefi' ]; then
+  ${CCMD} mount -t efivarfs none /sys/firmware/efi/efivars
+fi
 
 set_fstab
 set_timezone
