@@ -276,6 +276,8 @@ fi
 
 # todo: add test for root encryption to exclude separate var and home parts
 # todo: add a test for MAP_DEV mapper device name existing
+# todo: add a check for mkfs.fat if uefi from dosfstools
+# todo: add a check for debootstrap
 
 if [[ "${DEV}" =~ /dev/[sn].* ]]; then
   DEV_TYPE='device'
@@ -733,6 +735,14 @@ UUID=${UUID_ROOT}  /      ext4  rw,lazytime,noiversion  0 1
 UUID=${uuid_boot}  /boot  ${boot_fs_type}  rw,sync,noiversion      0 2
 EOF
 
+  if [ "${ENCRYPT_ROOT}" == true ]; then
+    echo "${PART_ENC}        /      ext4  rw,lazytime,noiversion  0 1" >> ${ROOT_DIR}/etc/fstab
+  else
+    echo "UUID=${UUID_ROOT}  /      ext4  rw,lazytime,noiversion  0 1" >> ${ROOT_DIR}/etc/fstab
+  fi
+
+  echo "UUID=${uuid_boot}  /boot  ${boot_fs_type}  rw,sync,noiversion      0 2" >> ${ROOT_DIR}/etc/fstab
+
   if [[ -n "${HOME_SIZE}" ]] && [[ "${ENCRYPT_HOME}" == 'false' ]]; then
     echo "UUID=${UUID_HOME}  /home  ext4  rw,lazytime,noiversion  0 2" \
       >> ${ROOT_DIR}/etc/fstab
@@ -914,6 +924,7 @@ unmount() {
   echo 'unmounting root...'
   umount  ${ROOT_DIR}/ && sleep 0.1
 
+  # todo: add root
   if [ "${ENCRYPT_HOME}" == 'true' ]; then
     echo 'closing luks device...'
     cryptsetup luksClose ${MAP_DEV} && sleep 0.1
