@@ -19,6 +19,8 @@ usage() {
 -t, --target <path>   path to target disk device, LVM volume group name, or file
 
 -i, --iface           interface for default gateway
+-s, --static-ip       use static ip (with netmask suffix), instead of dhcp
+-g, --static-gw       use static gateway ip
 -l, --label           prefix for LVM logical volumes, partitions, encrypted
                       devices, and filesystems; also a hostname
 -k, --public-key      path to a public ssh key file to include in image
@@ -66,6 +68,12 @@ DEV=
 
 # main network interface
 IFACE=
+
+# static ip for the interface
+STATIC_IP=
+
+# static gateway ip for the interface
+STATIC_GW=
 
 # public ssh key to put in authorized_hosts
 PUB_SSH_FILE=
@@ -131,6 +139,9 @@ LOOP_DEV=
 # prefix for labeling partitions and filesystems
 LABEL=
 
+# label, but with dashes converted to underscores
+LABEL_UNDER=
+
 # dev mapper name for encrypted home or root
 MAP_DEV=
 
@@ -155,9 +166,9 @@ APT_REPOS='main'
 # parse args
 # ==========
 
-opts=t:i:l:k:yewpub:r:h:v:
+opts=t:i:s:g:l:k:yewpub:r:h:v:
 
-long=target:,iface:,label:,public-key:,yes,encrypt-home,encrypt-root,purge-all,
+long=target:,iface:,static-ip:,static-gw:,label:,public-key:,yes,encrypt-home,encrypt-root,purge-all,
 long+=uefi,
 long+=boot-size:,root-size:,home-size:,var-size:,
 long+=boot-part:,root-part:,home-part:,var-part,help
@@ -175,8 +186,17 @@ while [[ ${#} -gt 0 ]]; do
     readonly IFACE="${2}"
     shift 2
     ;;
+  -s | --static-ip)
+    readonly STATIC_IP="${2}"
+    shift 2
+    ;;
+  -g | --static-gw)
+    readonly STATIC_GW="${2}"
+    shift 2
+    ;;
   -l | --label)
     readonly LABEL="${2}"
+    readonly LABEL_UNDER="$(echo ${LABEL} | tr - _)"
     shift 2
     ;;
   -k | --public-key)
@@ -253,9 +273,9 @@ while [[ ${#} -gt 0 ]]; do
 done
 
 if [ ${ENCRYPT_ROOT} == 'true' ]; then
-  MAP_DEV=${LABEL}_root_crypt
+  MAP_DEV=${LABEL_UNDER}_root_crypt
 elif [ ${ENCRYPT_HOME} == 'true' ]; then
-  MAP_DEV=${LABEL}_home_crypt
+  MAP_DEV=${LABEL_UNDER}_home_crypt
 fi
 
 PART_ENC="/dev/mapper/${MAP_DEV}"
@@ -263,6 +283,8 @@ PART_ENC="/dev/mapper/${MAP_DEV}"
 if [[ -z "${IFACE}" ]]; then
     err_exit 'no network interface defined'
 fi
+
+# todo: check if both static ip and gw are defined and ip has a netmask suffix
 
 if [[ -z "${DEV}" ]]; then
   if [[ -z "${BOOT_PART}" ]] || [[ -z "${ROOT_PART}" ]] ; then
@@ -345,12 +367,12 @@ if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
   lvdisplay \
   | grep '  LV Name  ' \
   | grep -q \
-    -e ${LABEL}-grub \
-    -e ${LABEL}-boot \
-    -e ${LABEL}-root \
-    -e ${LABEL}-home \
-    -e ${LABEL}-var \
-  && err_exit "logical volumes with prefix '${LABEL}' already exist"
+    -e ${LABEL_UNDER}_grub \
+    -e ${LABEL_UNDER}_boot \
+    -e ${LABEL_UNDER}_root \
+    -e ${LABEL_UNDER}_home \
+    -e ${LABEL_UNDER}_var \
+  && err_exit "logical volumes with prefix '${LABEL_UNDER}' already exist"
 
   if [[ ${DEV} == *-* ]]; then
     err_exit "volume group name can't have a dash in it"
@@ -478,13 +500,13 @@ get_partitions() {
 
   'volume_group' )
     INST_TYPE='bios'
-    BOOT_DISK="/dev/mapper/${DEV}-${LABEL}-boot"
-    GRUB_PART="/dev/mapper/${DEV}-${LABEL}-boot1"
-    BOOT_PART="/dev/mapper/${DEV}-${LABEL}-boot2"
-    ROOT_PART="/dev/mapper/${DEV}-${LABEL}-root"
+    BOOT_DISK="/dev/mapper/${DEV}-${LABEL_UNDER}_boot"
+    GRUB_PART="/dev/mapper/${DEV}-${LABEL_UNDER}_boot1"
+    BOOT_PART="/dev/mapper/${DEV}-${LABEL_UNDER}_boot2"
+    ROOT_PART="/dev/mapper/${DEV}-${LABEL_UNDER}_root"
 
-    [[ -n "${HOME_SIZE}" ]] && HOME_PART="/dev/mapper/${DEV}-${LABEL}-home"
-    [[ -n "${VAR_SIZE}" ]] && VAR_PART="/dev/mapper/${DEV}-${LABEL}-var"
+    [[ -n "${HOME_SIZE}" ]] && HOME_PART="/dev/mapper/${DEV}-${LABEL_UNDER}_home"
+    [[ -n "${VAR_SIZE}" ]] && VAR_PART="/dev/mapper/${DEV}-${LABEL_UNDER}_var"
 
     ;;
 
@@ -517,14 +539,14 @@ create_partitions() {
   if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
     echo '+ creating logical volumes...'
 
-    lvcreate -y -W y -L "${BOOT_SIZE}" "${DEV}" -n "${LABEL}-boot"
-    lvcreate -y -W y -L "${ROOT_SIZE}" "${DEV}" -n "${LABEL}-root"
+    lvcreate -y -W y -L "${BOOT_SIZE}" "${DEV}" -n "${LABEL_UNDER}_boot"
+    lvcreate -y -W y -L "${ROOT_SIZE}" "${DEV}" -n "${LABEL_UNDER}_root"
 
     [[ -n "${HOME_SIZE}" ]] \
-      && lvcreate -y -W y -L "${HOME_SIZE}" "${DEV}" -n "${LABEL}-home"
+      && lvcreate -y -W y -L "${HOME_SIZE}" "${DEV}" -n "${LABEL_UNDER}_home"
 
     [[ -n "${VAR_SIZE}" ]] \
-      && lvcreate -y -W y -L "${VAR_SIZE}" "${DEV}" -n "${LABEL}-var"
+      && lvcreate -y -W y -L "${VAR_SIZE}" "${DEV}" -n "${LABEL_UNDER}_var"
 
     sleep 0.5
     lvscan > /dev/null
@@ -721,7 +743,7 @@ set_fstab() {
     boot_fs_type='vfat'
   fi
 
-  cat > ${ROOT_DIR}/etc/fstab <<EOF
+  cat > ${ROOT_DIR}/etc/fstab << EOF
 proc    /proc      proc    rw,nosuid,nodev,noexec,hidepid=2,gid=0  0 0
 sys     /sys       sysfs   rw,nosuid,nodev,noexec                  0 0
 run     /run       tmpfs   rw,nosuid,nodev,mode=0755               0 0
@@ -756,7 +778,7 @@ EOF
 
 set_timezone() {
   echo '+ configuring timezone...'
-  ${CCMD} debconf-set-selections <<EOF
+  ${CCMD} debconf-set-selections << EOF
 tzdata tzdata/Areas select Europe
 tzdata tzdata/Zones/Europe select Warsaw
 EOF
@@ -767,37 +789,65 @@ EOF
 
 set_network() {
   echo '+ configuring network...'
-  cat > ${ROOT_DIR}/etc/network/interfaces <<EOF
+
+  cat > ${ROOT_DIR}/etc/network/interfaces << EOF
 auto lo
 iface lo inet loopback
-
-auto ${IFACE}
-allow-hotplug ${IFACE}
-iface ${IFACE} inet dhcp
-  dns-nameservers 9.9.9.9
-
+iface lo inet6 loopback
 source /etc/network/interfaces.d/*
 EOF
 
-  cat > ${ROOT_DIR}/etc/hosts <<EOF
+  if [[ ${STATIC_IP} == '' ]]; then
+
+    # network config for dhcp
+    cat > ${ROOT_DIR}/etc/network/interfaces.d/${IFACE} << EOF
+allow-hotplug ${IFACE}
+iface ${IFACE} inet dhcp
+iface ${IFACE} inet6 auto
+  dns-nameservers 9.9.9.9
+EOF
+
+  else
+
+    # network config for static ip
+    cat > ${ROOT_DIR}/etc/network/interfaces.d/${IFACE} << EOF
+allow-hotplug ${IFACE}
+iface ${IFACE} inet static
+  address ${STATIC_IP}
+  gateway ${STATIC_GW}
+  dns-nameservers ${STATIC_GW}
+EOF
+
+    cat > ${ROOT_DIR}/etc/resolv.conf << EOF
+nameserver ${STATIC_GW}
+EOF
+  fi
+
+  cat > ${ROOT_DIR}/etc/hosts << EOF
 127.0.0.1       localhost local debian
 EOF
 }
 
 set_apt() {
   echo '+ configuring apt...'
-  cat > ${ROOT_DIR}/etc/apt/sources.list <<EOF
+  cat > ${ROOT_DIR}/etc/apt/sources.list << EOF
 deb http://deb.debian.org/debian bookworm ${APT_REPOS}
 deb http://deb.debian.org/debian-security/ bookworm-security ${APT_REPOS}
 deb http://deb.debian.org/debian bookworm-updates ${APT_REPOS}
 EOF
+
+  cat > ${ROOT_DIR}/etc/apt/apt.conf.d/99norecommend << EOF
+APT::Install-Recommends "0";
+APT::Install-Suggests "0";
+EOF
+
   ${CCMD} apt-get update
 }
 
 set_locale() {
   echo '+ configuring locale...'
   ${CCMD} apt-get install -y locales
-  ${CCMD} debconf-set-selections <<EOF
+  ${CCMD} debconf-set-selections << EOF
 locales locales/locales_to_be_generated multiselect en_US.UTF-8 UTF-8, pl_PL.UTF-8 UTF-8
 locales locales/default_environment_locale select en_US.UTF-8
 EOF
@@ -809,7 +859,7 @@ EOF
 set_keyboard() {
   echo '+ configuring keyboard...'
   ${CCMD} apt-get install -y keyboard-configuration
-  ${CCMD} debconf-set-selections <<EOF
+  ${CCMD} debconf-set-selections << EOF
 keyboard-configuration keyboard-configuration/layoutcode string pl
 keyboard-configuration keyboard-configuration/xkb-keymap string pl
 EOF
@@ -864,9 +914,6 @@ install_bootloader() {
 
 sys_config() {
   ${CCMD} sh -c 'echo root:root | chpasswd'
-
-  echo 'net.ipv6.conf.all.disable_ipv6 = 1' \
-    > ${ROOT_DIR}/etc/sysctl.d/70-disable-ipv6.conf
 
   sed -i 's|^#PermitRootLogin|PermitRootLogin|' ${ROOT_DIR}/etc/ssh/sshd_config
   rm ${ROOT_DIR}/etc/ssh/ssh_host_{ecdsa,rsa}_key*
