@@ -1058,7 +1058,7 @@ create_filesystems
 mount_partitions
 
 echo '+ installing...'
-debootstrap --arch amd64 --include=vim,openssh-server bookworm ${ROOT_DIR} http://ftp.uk.debian.org/debian
+debootstrap --arch amd64 --include=vim,openssh-server,bridge-utils,dbus bookworm ${ROOT_DIR} http://ftp.uk.debian.org/debian
 
 mount --bind /dev ${ROOT_DIR}/dev
 mount --bind /dev/pts ${ROOT_DIR}/dev/pts
