@@ -967,6 +967,7 @@ pkg_install() {
 
   [[ ${ENCRYPT_HOME} == 'true' ]] && ${CCMD} apt-get install -y cryptsetup
 
+  ${CCMD} systemctl enable ssh
   ${CCMD} apt-get clean
 }
 
