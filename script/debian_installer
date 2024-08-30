@@ -42,14 +42,16 @@ usage() {
 --home-part           existing home partition path to utilize
 --var-part            existing var partition path to utilize
 
+--kali                install kali instead of debian
 
 --help                this help message
 
 examples:
 
-deb_dev_install -t /dev/sdb -b 512M -r 128G 
-deb_dev_install -t /dev/sdb -b 512M -r 64G -u 32G -v 32G -p
-deb_dev_install -t /dev/sdb -b 1G -r 64G --boot-part=/dev/sdb1 --root-part=/dev/sdb2"
+./debian_installer -t /dev/sdz -b 512M -r 128G
+./debian_installer -t /dev/sdz -b 512M -r 64G -u 32G -v 32G -p
+./debian_installer -t /dev/sdz -b 1G -r 64G --boot-part=/dev/sdz1 --root-part=/dev/sdz2"
+./debian_installer -t ~/dummy_vm.img -i enp1s0 -l dummy-1 -k ~/.ssh/authorized_keys -b 128M -r 4G
   exit 0
 }
 
@@ -121,7 +123,10 @@ HOME_PART_N=
 VAR_PART_N=
 
 # default path to mount partitions
-ROOT_DIR=/tmp/deb_build
+readonly ROOT_DIR=/tmp/deb_build
+
+# tmp dir to extract files
+readonly TMP_DIR=/tmp/deb_build_tmp
 
 # LV containing efi system partition
 BOOT_DISK=
@@ -162,6 +167,9 @@ CCMD="chroot ${ROOT_DIR} env -i DEBIAN_FRONTEND=noninteractive TERM=linux PATH=/
 # repositories for apt: main contrib non-free non-free-firmware
 APT_REPOS='main'
 
+# install kali
+KALI='false'
+
 
 # parse args
 # ==========
@@ -171,7 +179,7 @@ opts=t:i:s:g:l:k:yewpub:r:h:v:
 long=target:,iface:,static-ip:,static-gw:,label:,public-key:,yes,encrypt-home,encrypt-root,purge-all,
 long+=uefi,
 long+=boot-size:,root-size:,home-size:,var-size:,
-long+=boot-part:,root-part:,home-part:,var-part,help
+long+=boot-part:,root-part:,home-part:,var-part,kali,help
 
 parsed_opts=$(getopt -o=${opts} --long=${long} --name "$0" -- "$@")
 
@@ -263,6 +271,10 @@ while [[ ${#} -gt 0 ]]; do
     readonly VAR_PART="${2}"
     shift 2
     ;;
+  --kali)
+    readonly KALI='true'
+    shift
+    ;;
   --help)
     usage
     ;;
@@ -328,7 +340,8 @@ SIZE="$(( BOOT_SIZE_B + ROOT_SIZE_B + HOME_SIZE_B + VAR_SIZE_B ))"
 readonly DEV PUB_SSH_FILE ENCRYPT_HOME ENCRYPT_ROOT PURGE \
   BOOT_SIZE ROOT_SIZE HOME_SIZE VAR_SIZE SIZE \
   ROOT_DIR DEV_TYPE \
-  UUID_GRUB UUID_BOOT UUID_BOOT_FAT UUID_ROOT UUID_HOME UUID_VAR
+  UUID_GRUB UUID_BOOT UUID_BOOT_FAT UUID_ROOT UUID_HOME UUID_VAR \
+  KALI
 
 
 # tests and checks
@@ -360,7 +373,7 @@ findmnt "${ROOT_DIR}" && err_exit "${ROOT_DIR} already mounted"
 [ "${ROOT_DIR}" == '/' ] && err_exit "/ as ROOT_DIR not allowed"
 
 if [ "${DEV_TYPE}" == 'file' ]; then
-  command -v qemu-img >/dev/null || err_exit 'qemu-img from qemu-system-x86 missing'
+  command -v qemu-img >/dev/null || err_exit 'qemu-img from qemu-utils missing'
 fi
 
 if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
@@ -419,6 +432,17 @@ get_free_space() {
   fi
 
   readonly FREE_SPACE
+}
+
+get_kali_keyring() {
+  local pkg
+  pkg="$(curl -s http://http.kali.org/pool/main/k/kali-archive-keyring/ \
+    | grep '"kali-archive-keyring_.*_all\.deb" ' \
+    | cut -d'"' -f4)"
+  mkdir -p ${TMP_DIR}
+  wget -q "https://http.kali.org/pool/main/k/kali-archive-keyring/${pkg}" \
+    -O "${TMP_DIR}/${pkg}"
+  dpkg -x "${TMP_DIR}/${pkg}" ${TMP_DIR}/
 }
 
 partsync() {
@@ -830,11 +854,18 @@ EOF
 
 set_apt() {
   echo '+ configuring apt...'
-  cat > ${ROOT_DIR}/etc/apt/sources.list << EOF
+
+  if [[ ${KALI} == 'false' ]]; then
+    cat > ${ROOT_DIR}/etc/apt/sources.list << EOF
 deb http://deb.debian.org/debian bookworm ${APT_REPOS}
 deb http://deb.debian.org/debian-security/ bookworm-security ${APT_REPOS}
 deb http://deb.debian.org/debian bookworm-updates ${APT_REPOS}
 EOF
+  else
+    cat > ${ROOT_DIR}/etc/apt/sources.list << EOF
+deb http://http.kali.org/kali kali-rolling ${APT_REPOS}
+EOF
+  fi
 
   cat > ${ROOT_DIR}/etc/apt/apt.conf.d/99norecommend << EOF
 APT::Install-Recommends "0";
@@ -842,6 +873,12 @@ APT::Install-Suggests "0";
 EOF
 
   ${CCMD} apt-get update
+
+  if [[ ${KALI} == 'true' ]]; then
+    ${CCMD} apt-get dist-upgrade -y
+    sleep 1
+    ${CCMD} apt-get install -y ca-certificates
+  fi
 }
 
 set_locale() {
@@ -1042,6 +1079,10 @@ fi
 # main
 # =======
 
+if [[ ${KALI} == 'true' ]]; then
+  get_kali_keyring
+fi
+
 if [[ "${PURGE}" == 'true' ]]; then
   purge_partitions
   get_free_space
@@ -1058,7 +1099,18 @@ create_filesystems
 mount_partitions
 
 echo '+ installing...'
-debootstrap --arch amd64 --include=vim,openssh-server,bridge-utils,dbus bookworm ${ROOT_DIR} http://ftp.uk.debian.org/debian
+if [[ ${KALI} == 'false' ]]; then
+  debootstrap \
+    --arch amd64 \
+    --include=vim,openssh-server,bridge-utils,dbus \
+    bookworm ${ROOT_DIR} http://ftp.uk.debian.org/debian
+else
+  debootstrap \
+    --arch amd64 \
+    --include=vim,openssh-server,bridge-utils,dbus \
+    --keyring=${TMP_DIR}/usr/share/keyrings/kali-archive-keyring.gpg \
+    kali-last-snapshot ${ROOT_DIR} http://http.kali.org/kali
+fi
 
 mount --bind /dev ${ROOT_DIR}/dev
 mount --bind /dev/pts ${ROOT_DIR}/dev/pts
@@ -1085,6 +1137,7 @@ pkg_install
 deploy_ssh_key
 unmount
 
+rm -rf ${TMP_DIR}
 sync
 echo '+ done'
 
