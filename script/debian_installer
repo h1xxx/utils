@@ -21,6 +21,7 @@ usage() {
 -i, --iface           interface for default gateway
 -s, --static-ip       use static ip (with netmask suffix), instead of dhcp
 -g, --static-gw       use static gateway ip
+-d, --dns-server      dns server address
 -l, --label           prefix for LVM logical volumes, partitions, encrypted
                       devices, and filesystems; also a hostname
 -k, --public-key      path to a public ssh key file to include in image
@@ -76,6 +77,9 @@ STATIC_IP=
 
 # static gateway ip for the interface
 STATIC_GW=
+
+# dns server address for resolv.conf
+DNS_SERVER=
 
 # public ssh key to put in authorized_hosts
 PUB_SSH_FILE=
@@ -174,9 +178,9 @@ KALI='false'
 # parse args
 # ==========
 
-opts=t:i:s:g:l:k:yewpub:r:h:v:
+opts=t:i:s:g:d:l:k:yewpub:r:h:v:
 
-long=target:,iface:,static-ip:,static-gw:,label:,public-key:,yes,encrypt-home,encrypt-root,purge-all,
+long=target:,iface:,static-ip:,static-gw:,dns-server:,label:,public-key:,yes,encrypt-home,encrypt-root,purge-all,
 long+=uefi,
 long+=boot-size:,root-size:,home-size:,var-size:,
 long+=boot-part:,root-part:,home-part:,var-part,kali,help
@@ -200,6 +204,10 @@ while [[ ${#} -gt 0 ]]; do
     ;;
   -g | --static-gw)
     readonly STATIC_GW="${2}"
+    shift 2
+    ;;
+  -d | --dns-server)
+    readonly DNS_SERVER="${2}"
     shift 2
     ;;
   -l | --label)
@@ -839,12 +847,17 @@ allow-hotplug ${IFACE}
 iface ${IFACE} inet static
   address ${STATIC_IP}
   gateway ${STATIC_GW}
-  dns-nameservers ${STATIC_GW}
 EOF
 
-    cat > ${ROOT_DIR}/etc/resolv.conf << EOF
+    if [[ ${DNS_SERVER} == '' ]]; then
+      cat > ${ROOT_DIR}/etc/resolv.conf << EOF
 nameserver ${STATIC_GW}
 EOF
+    else
+      cat > ${ROOT_DIR}/etc/resolv.conf << EOF
+nameserver ${DNS_SERVER}
+EOF
+    fi
   fi
 
   cat > ${ROOT_DIR}/etc/hosts << EOF
