@@ -943,9 +943,11 @@ install_bootloader() {
   else
     p="root=LABEL=${LABEL}-root"
   fi
-  [[ ${DEV_TYPE} != 'device' ]] && p+=' nomodeset'
-  p+=' console=ttyS0,115200n8'
-  p+=' console=tty0'
+  if [[ ${DEV_TYPE} == 'device' ]]; then
+    p+=' console=tty0'
+  else
+    p+=' nomodeset console=ttyS0,115200n8'
+  fi
 
   if [ "${ENCRYPT_ROOT}" == true ]; then
     echo "${MAP_DEV} PARTLABEL=${LABEL}-root none luks" > ${ROOT_DIR}/etc/crypttab
