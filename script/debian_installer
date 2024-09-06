@@ -3,6 +3,7 @@ set -euo pipefail
 
 
 # todo:
+# add a chack for label to not exceed 16 chars (11 chars + suffix _root)
 # check for umask 0022
 # check for chmod 644 /etc/resolv.conf in host sys (apt needs this)
 # add check for numfmt, parted, mkfs.ext4, perl
