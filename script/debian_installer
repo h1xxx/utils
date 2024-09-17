@@ -17,8 +17,8 @@ set -euo pipefail
 usage() {
   echo "usage: dev_install [ARGS]
 
--t, --target <path>   path to target disk device, LVM volume group name, or file
-
+-t, --target <path>   path to target disk device, existing LVM volume group
+                      name, image file, or rootfs directory
 -i, --iface           interface for default gateway
 -s, --static-ip       use static ip (with netmask suffix), instead of dhcp
 -g, --static-gw       use static gateway ip
@@ -52,8 +52,9 @@ examples:
 
 ./debian_installer -t /dev/sdz -b 512M -r 128G
 ./debian_installer -t /dev/sdz -b 512M -r 64G -u 32G -v 32G -p
-./debian_installer -t /dev/sdz -b 1G -r 64G --boot-part=/dev/sdz1 --root-part=/dev/sdz2"
+./debian_installer -t /dev/sdz -b 1G -r 64G --boot-part=/dev/sdz1 --root-part=/dev/sdz2
 ./debian_installer -t ~/dummy_vm.img -i enp1s0 -l dummy-1 -k ~/.ssh/authorized_keys -b 128M -r 4G
+"
   exit 0
 }
 
@@ -128,7 +129,7 @@ HOME_PART_N=
 VAR_PART_N=
 
 # default path to mount partitions
-readonly ROOT_DIR=/tmp/deb_build
+ROOT_DIR=/tmp/deb_build
 
 # tmp dir to extract files
 readonly TMP_DIR=/tmp/deb_build_tmp
@@ -165,9 +166,6 @@ UUID_BOOT_FAT="$(rev <<< ${UUID_BOOT} | cut -c 1-8 | rev)"
 UUID_ROOT="$(uuidgen | sed 's|.*-.*-.*-.*-.\{4\}|00000000-0000-0000-0000-0000|')"
 UUID_HOME="$(uuidgen | sed 's|.*-.*-.*-.*-.\{4\}|00000000-0000-0000-0000-0000|')"
 UUID_VAR="$(uuidgen | sed 's|.*-.*-.*-.*-.\{4\}|00000000-0000-0000-0000-0000|')"
-
-# chroot command interpreter
-CCMD="chroot ${ROOT_DIR} env -i DEBIAN_FRONTEND=noninteractive TERM=linux PATH=/usr/bin:/usr/sbin"
 
 # repositories for apt: main contrib non-free non-free-firmware
 APT_REPOS='main'
@@ -325,7 +323,7 @@ fi
 if [[ "${DEV}" =~ /dev/[sn].* ]]; then
   DEV_TYPE='device'
 
-elif [ -z "${DEV}" ]; then
+elif [[ -z "${DEV}" ]]; then
   dm=/dev/mapper/*
   if [[ "${BOOT_PART}" == ${dm} ]] && [[ "${ROOT_PART}" == ${dm} ]]; then
     DEV_TYPE='volume_group'
@@ -339,14 +337,19 @@ else
   if vgs "${DEV}" >/dev/null 2>&1; then
     DEV_TYPE='volume_group'
   else
-    DEV_TYPE='file'
+    [[ -f "${DEV}" ]] && DEV_TYPE='file'
+    [[ -d "${DEV}" ]] && DEV_TYPE='dir'
   fi
 fi
 
 SIZE="$(( BOOT_SIZE_B + ROOT_SIZE_B + HOME_SIZE_B + VAR_SIZE_B ))"
+[ "${DEV_TYPE}" == 'dir' ] && ROOT_DIR="${DEV}"
+
+# chroot command interpreter
+CCMD="chroot ${ROOT_DIR} env -i DEBIAN_FRONTEND=noninteractive TERM=linux PATH=/usr/bin:/usr/sbin"
 
 # make sure that these global vars are readonly from now on
-readonly DEV PUB_SSH_FILE ENCRYPT_HOME ENCRYPT_ROOT PURGE \
+readonly DEV ROOT_DIR PUB_SSH_FILE ENCRYPT_HOME ENCRYPT_ROOT PURGE \
   BOOT_SIZE ROOT_SIZE HOME_SIZE VAR_SIZE SIZE \
   ROOT_DIR DEV_TYPE \
   UUID_GRUB UUID_BOOT UUID_BOOT_FAT UUID_ROOT UUID_HOME UUID_VAR \
@@ -363,8 +366,10 @@ if [ "${INST_TYPE}" == 'uefi' ]; then
   command -v mkfs.fat  >/dev/null || err_exit 'mkfs.fat from dosfstools missing'
 fi
 
-[[ -z "${BOOT_SIZE}" ]] && err_exit 'boot partition size not defined'
-[[ -z "${ROOT_SIZE}" ]] && err_exit 'root partition size not defined'
+if [ "${DEV_TYPE}" != 'dir' ]; then
+  [[ -z "${BOOT_SIZE}" ]] && err_exit 'boot partition size not defined'
+  [[ -z "${ROOT_SIZE}" ]] && err_exit 'root partition size not defined'
+fi
 
 [[ -z "${LABEL}" ]] && err_exit 'label prefix not defined'
 
@@ -414,9 +419,9 @@ fi
 # =========
 
 get_free_space() {
-  if [ "${DEV_TYPE}" == 'file' ] || [ -z "${DEV}" ]; then
-    return
-  fi
+  [ "${DEV_TYPE}" == 'file' ] && return
+  [ "${DEV_TYPE}" == 'dir' ] && return
+  [ -z "${DEV}" ] && return
 
   if [ "${DEV_TYPE}" == 'device' ]; then
     FREE_SPACE="$(parted "${DEV}" unit B print free \
@@ -467,6 +472,8 @@ partsync() {
 }
 
 purge_partitions() {
+  [ "${DEV_TYPE}" == 'dir' ] && return
+
   echo '+ purging existing partitions...'
   sgdisk --zap-all "${DEV}" && partsync
   dd if=/dev/zero of="${DEV}" bs=1M count=128 >/dev/null 2>&1
@@ -564,11 +571,13 @@ get_partitions() {
     ;;
   esac
 
-  # no idea why this is needed, but without it the script exits
+  # devices need to settle; without this next steps error out
   sleep 1
 }
 
 create_partitions() {
+  [ "${DEV_TYPE}" == 'dir' ] && return
+
   if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
     echo '+ creating logical volumes...'
 
@@ -678,6 +687,8 @@ create_partitions() {
 }
 
 create_filesystems() {
+  [ "${DEV_TYPE}" == 'dir' ] && return
+
   echo '+ creating boot filesystem...'
   if [ "${INST_TYPE}" == 'bios' ]; then
     mkfs.ext4 -F -L "${LABEL}-boot" -U "${UUID_BOOT}" "${BOOT_PART}"
@@ -736,6 +747,8 @@ create_filesystems() {
 }
 
 mount_partitions() {
+  [ "${DEV_TYPE}" == 'dir' ] && return
+
   echo '+ mounting partitions...'
   mkdir -p "${ROOT_DIR}"
 
@@ -762,6 +775,8 @@ mount_partitions() {
 }
 
 set_fstab() {
+  [ "${DEV_TYPE}" == 'dir' ] && return
+
   echo '+ configuring fstab...'
 
   local uuid_boot
@@ -834,7 +849,7 @@ EOF
 
     # network config for dhcp
     cat > ${ROOT_DIR}/etc/network/interfaces.d/${IFACE} << EOF
-allow-hotplug ${IFACE}
+auto ${IFACE}
 iface ${IFACE} inet dhcp
 iface ${IFACE} inet6 auto
   dns-nameservers 9.9.9.9
@@ -844,7 +859,7 @@ EOF
 
     # network config for static ip
     cat > ${ROOT_DIR}/etc/network/interfaces.d/${IFACE} << EOF
-allow-hotplug ${IFACE}
+auto ${IFACE}
 iface ${IFACE} inet static
   address ${STATIC_IP}
   gateway ${STATIC_GW}
@@ -920,6 +935,8 @@ EOF
 }
 
 install_bootloader() {
+  [ "${DEV_TYPE}" == 'dir' ] && return
+
   echo '+ installing grub...'
   local dev
   case "${DEV_TYPE}" in
@@ -979,7 +996,10 @@ sys_config() {
 
 pkg_install() {
   ${CCMD} apt-get install -y python3
-  [[ ${DEV_TYPE} != 'device' ]] && ${CCMD} apt-get install -y acpid
+
+  if [[ "${DEV_TYPE}" != 'dir' ]] && [[ ${DEV_TYPE} != 'device' ]]; then
+    ${CCMD} apt-get install -y acpid
+  fi
 
   [[ ${ENCRYPT_HOME} == 'true' ]] && ${CCMD} apt-get install -y cryptsetup
 
@@ -1016,14 +1036,18 @@ unmount() {
     umount ${ROOT_DIR}/var && sleep 0.1
   fi
 
-  echo 'unmounting /boot...'
-  umount  ${ROOT_DIR}/boot && sleep 0.1
+  if [ "${DEV_TYPE}" != 'dir' ]; then
+    echo 'unmounting /boot...'
+    umount  ${ROOT_DIR}/boot && sleep 0.1
+  fi
 
   echo 'unmounting /proc...'
   umount ${ROOT_DIR}/proc && sleep 0.1
 
   echo 'unmounting root...'
-  umount  ${ROOT_DIR}/ && sleep 0.1
+  if [ "${DEV_TYPE}" != 'dir' ]; then
+    umount  ${ROOT_DIR}/ && sleep 0.1
+  fi
 
   # todo: add root
   if [ "${ENCRYPT_HOME}" == 'true' ]; then
@@ -1145,8 +1169,10 @@ set_apt
 set_locale
 set_keyboard
 
-echo '+ installing kernel...'
-${CCMD} apt-get -y --no-install-recommends install linux-image-amd64 zstd
+if [ "${DEV_TYPE}" != 'dir' ]; then
+  echo '+ installing kernel...'
+  ${CCMD} apt-get -y --no-install-recommends install linux-image-amd64 zstd
+fi
 
 install_bootloader
 sys_config
