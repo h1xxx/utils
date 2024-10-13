@@ -34,6 +34,9 @@ usage() {
                       create new partitions on existing free disk space)
 -u, --uefi            force uefi install
 
+--uri                 uri for apt package download
+--suite               suite of apt packages to download
+
 -b, --boot-size       boot partition size
 -r, --root-size       root partition size
 -h, --home-size       home partition size (omit if not defined)
@@ -43,8 +46,6 @@ usage() {
 --root-part           existing root partition path to utilize
 --home-part           existing home partition path to utilize
 --var-part            existing var partition path to utilize
-
---kali                install kali instead of debian
 
 --help                this help message
 
@@ -170,8 +171,14 @@ UUID_VAR="$(uuidgen | sed 's|.*-.*-.*-.*-.\{4\}|00000000-0000-0000-0000-0000|')"
 # repositories for apt: main contrib non-free non-free-firmware
 APT_REPOS='main'
 
-# install kali
-KALI='false'
+# uri to fetch packages from (for kali: http://http.kali.org/kali)
+URI='http://ftp.uk.debian.org/debian'
+
+# suite of packages to get (for kali: kali-last-snapshot)
+SUITE='bookworm'
+
+# keys to verify packages
+KEYRING='/usr/share/keyrings/debian-archive-keyring.gpg'
 
 
 # parse args
@@ -179,10 +186,10 @@ KALI='false'
 
 opts=t:i:s:g:d:l:k:yewpub:r:h:v:
 
-long=target:,iface:,static-ip:,static-gw:,dns-server:,label:,public-key:,yes,encrypt-home,encrypt-root,purge-all,
-long+=uefi,
+long=target:,iface:,static-ip:,static-gw:,dns-server:,label:,public-key:,
+long+=yes,encrypt-home,encrypt-root,purge-all,uefi,uri:,suite:,
 long+=boot-size:,root-size:,home-size:,var-size:,
-long+=boot-part:,root-part:,home-part:,var-part,kali,help
+long+=boot-part:,root-part:,home-part:,var-part,help
 
 parsed_opts=$(getopt -o=${opts} --long=${long} --name "$0" -- "$@")
 
@@ -238,6 +245,14 @@ while [[ ${#} -gt 0 ]]; do
     readonly UEFI_FORCE=true
     shift
     ;;
+  --uri)
+    readonly URI="${2}"
+    shift 2
+    ;;
+  --suite)
+    readonly SUITE="${2}"
+    shift 2
+    ;;
   -b | --boot-size)
     BOOT_SIZE_B="$(numfmt --from=iec "${2}")"
     readonly BOOT_SIZE_B
@@ -277,10 +292,6 @@ while [[ ${#} -gt 0 ]]; do
   --var-part)
     readonly VAR_PART="${2}"
     shift 2
-    ;;
-  --kali)
-    readonly KALI='true'
-    shift
     ;;
   --help)
     usage
@@ -348,12 +359,17 @@ SIZE="$(( BOOT_SIZE_B + ROOT_SIZE_B + HOME_SIZE_B + VAR_SIZE_B ))"
 # chroot command interpreter
 CCMD="chroot ${ROOT_DIR} env -i DEBIAN_FRONTEND=noninteractive TERM=linux PATH=/usr/bin:/usr/sbin"
 
+if [[ ${SUITE} == 'kali-last-snapshot' ]]; then
+  KEYRING="${TMP_DIR}/usr/share/keyrings/kali-archive-keyring.gpg"
+fi
+
+[[ ${SUITE} == 'sid' ]] && SUITE='unstable'
+
 # make sure that these global vars are readonly from now on
-readonly DEV ROOT_DIR PUB_SSH_FILE ENCRYPT_HOME ENCRYPT_ROOT PURGE \
-  BOOT_SIZE ROOT_SIZE HOME_SIZE VAR_SIZE SIZE \
+readonly DEV ROOT_DIR PUB_SSH_FILE ENCRYPT_HOME ENCRYPT_ROOT PURGE UEFI_FORCE \
+  URI SUITE KEYRING BOOT_SIZE ROOT_SIZE HOME_SIZE VAR_SIZE SIZE \
   ROOT_DIR DEV_TYPE \
-  UUID_GRUB UUID_BOOT UUID_BOOT_FAT UUID_ROOT UUID_HOME UUID_VAR \
-  KALI
+  UUID_GRUB UUID_BOOT UUID_BOOT_FAT UUID_ROOT UUID_HOME UUID_VAR
 
 
 # tests and checks
@@ -884,15 +900,19 @@ EOF
 set_apt() {
   echo '+ configuring apt...'
 
-  if [[ ${KALI} == 'false' ]]; then
+  if [[ ${SUITE} == 'kali-last-snapshot' ]]; then
     cat > ${ROOT_DIR}/etc/apt/sources.list << EOF
-deb http://deb.debian.org/debian bookworm ${APT_REPOS}
-deb http://deb.debian.org/debian-security/ bookworm-security ${APT_REPOS}
-deb http://deb.debian.org/debian bookworm-updates ${APT_REPOS}
+deb http://http.kali.org/kali kali-rolling ${APT_REPOS}
+EOF
+  elif [[ ${SUITE} == 'unstable' ]]; then
+    cat > ${ROOT_DIR}/etc/apt/sources.list << EOF
+deb http://deb.debian.org/debian ${SUITE} ${APT_REPOS}
 EOF
   else
     cat > ${ROOT_DIR}/etc/apt/sources.list << EOF
-deb http://http.kali.org/kali kali-rolling ${APT_REPOS}
+deb http://deb.debian.org/debian ${SUITE} ${APT_REPOS}
+deb http://deb.debian.org/debian-security/ ${SUITE}-security ${APT_REPOS}
+deb http://deb.debian.org/debian ${SUITE}-updates ${APT_REPOS}
 EOF
   fi
 
@@ -903,7 +923,7 @@ EOF
 
   ${CCMD} apt-get -o 'APT::Update::Error-Mode=any' update
 
-  if [[ ${KALI} == 'true' ]]; then
+  if [[ ${SUITE} == 'kali-last-snapshot' ]]; then
     ${CCMD} apt-get dist-upgrade -y
     sleep 1
     ${CCMD} apt-get install -y ca-certificates
@@ -1120,7 +1140,7 @@ fi
 # main
 # =======
 
-if [[ ${KALI} == 'true' ]]; then
+if [[ ${SUITE} == 'kali-last-snapshot' ]]; then
   get_kali_keyring
 fi
 
@@ -1140,18 +1160,11 @@ create_filesystems
 mount_partitions
 
 echo '+ installing...'
-if [[ ${KALI} == 'false' ]]; then
-  debootstrap \
-    --arch amd64 \
-    --include=vim,openssh-server,bridge-utils,dbus \
-    bookworm ${ROOT_DIR} http://ftp.uk.debian.org/debian
-else
-  debootstrap \
-    --arch amd64 \
-    --include=vim,openssh-server,bridge-utils,dbus \
-    --keyring=${TMP_DIR}/usr/share/keyrings/kali-archive-keyring.gpg \
-    kali-last-snapshot ${ROOT_DIR} http://http.kali.org/kali
-fi
+debootstrap \
+  --arch amd64 \
+  --include=vim,openssh-server,bridge-utils,dbus \
+  --keyring=${KEYRING} \
+  ${SUITE} ${ROOT_DIR} ${URI}
 
 mount --bind /dev ${ROOT_DIR}/dev
 mount --bind /dev/pts ${ROOT_DIR}/dev/pts
