@@ -2,18 +2,6 @@
 set -euo pipefail
 
 
-# todo:
-# add a chack for label to not exceed 16 chars (11 chars + suffix _root)
-# check for umask 0022
-# check for chmod 644 /etc/resolv.conf in host sys (apt needs this)
-# add check for numfmt, parted, mkfs.ext4, perl
-# add check for /usr/share/keyrings/debian-archive-keyring.gpg
-# add check for mount to be from util-linux, not busybox
-# disable "ERROR: label prefix 'main' already exists" if the disk is about to be purged
-# handle case when no purge and no partition table on disk (now it's an error)
-# list all deps if one is missing
-# encrypt and yes should be exclusive (password needed)
-
 usage() {
   echo "usage: dev_install [ARGS]
 
@@ -47,7 +35,13 @@ usage() {
 --home-part           existing home partition path to utilize
 --var-part            existing var partition path to utilize
 
+--raid                provide another disk device for RAID1 install
+
 --help                this help message
+
+
+install all deps:
+apt install uuid-runtime gdisk parted debootstrap mkfs.ext4 perl-base dosfstools
 
 examples:
 
@@ -133,7 +127,7 @@ VAR_PART_N=
 ROOT_DIR=/tmp/deb_build
 
 # tmp dir to extract files
-readonly TMP_DIR=/tmp/deb_build_tmp
+readonly TMP_DIR='/tmp/deb_build_tmp'
 
 # LV containing efi system partition
 BOOT_DISK=
@@ -184,12 +178,12 @@ KEYRING='/usr/share/keyrings/debian-archive-keyring.gpg'
 # parse args
 # ==========
 
-opts=t:i:s:g:d:l:k:yewpub:r:h:v:
+opts='t:i:s:g:d:l:k:yewpub:r:h:v:'
 
-long=target:,iface:,static-ip:,static-gw:,dns-server:,label:,public-key:,
-long+=yes,encrypt-home,encrypt-root,purge-all,uefi,uri:,suite:,
-long+=boot-size:,root-size:,home-size:,var-size:,
-long+=boot-part:,root-part:,home-part:,var-part,help
+long='target:,iface:,static-ip:,static-gw:,dns-server:,label:,public-key:,'
+long+='yes,encrypt-home,encrypt-root,purge-all,uefi,uri:,suite:,'
+long+='boot-size:,root-size:,home-size:,var-size:,'
+long+='boot-part:,root-part:,home-part:,var-part,help'
 
 parsed_opts=$(getopt -o=${opts} --long=${long} --name "$0" -- "$@")
 
@@ -226,15 +220,15 @@ while [[ ${#} -gt 0 ]]; do
     shift 2
     ;;
   -y | --yes)
-    readonly YES=true
+    readonly YES='true'
     shift
     ;;
   -e | --encrypt-home)
-    readonly ENCRYPT_HOME=true
+    readonly ENCRYPT_HOME='true'
     shift
     ;;
   -w | --encrypt-root)
-    readonly ENCRYPT_ROOT=true
+    readonly ENCRYPT_ROOT='true'
     shift
     ;;
   -p | --purge-all)
@@ -302,19 +296,33 @@ while [[ ${#} -gt 0 ]]; do
   esac
 done
 
-if [ ${ENCRYPT_ROOT} == 'true' ]; then
-  MAP_DEV=${LABEL_UNDER}_root_crypt
-elif [ ${ENCRYPT_HOME} == 'true' ]; then
-  MAP_DEV=${LABEL_UNDER}_home_crypt
+if [[ ${ENCRYPT_ROOT} == 'true' ]]; then
+  MAP_DEV="${LABEL_UNDER}_root_crypt"
+elif [[ ${ENCRYPT_HOME} == 'true' ]]; then
+  MAP_DEV="${LABEL_UNDER}_home_crypt"
 fi
 
 PART_ENC="/dev/mapper/${MAP_DEV}"
+
+
+# tests and checks
+# ================
 
 if [[ -z "${IFACE}" ]]; then
     err_exit 'no network interface defined'
 fi
 
-# todo: check if both static ip and gw are defined and ip has a netmask suffix
+if [[ -n "${STATIC_IP}" ]] && [[ -z "${STATIC_GW}" ]]; then
+    err_exit 'both static ip and static gateway need to be defined'
+fi
+
+if [[ -z "${STATIC_IP}" ]] && [[ -n "${STATIC_GW}" ]]; then
+    err_exit 'both static ip and static gateway need to be defined'
+fi
+
+if [[ -n "${STATIC_IP}" ]] && [[ ! "${STATIC_IP}" =~ .*/.* ]]; then
+    err_exit 'static ip needs to have a netmask suffix defined'
+fi
 
 if [[ -z "${DEV}" ]]; then
   if [[ -z "${BOOT_PART}" ]] || [[ -z "${ROOT_PART}" ]] ; then
@@ -326,10 +334,49 @@ else
   fi
 fi
 
-# todo: add test for root encryption to exclude separate var and home parts
-# todo: add a test for MAP_DEV mapper device name existing
-# todo: add a check for mkfs.fat if uefi from dosfstools
-# todo: add a check for debootstrap
+if [[ ${ENCRYPT_ROOT} == 'true' ]] && [[ ${ENCRYPT_HOME} == 'true' ]]; then
+  err_exit "can't encrypt root and home at the same time"
+fi
+
+if [[ ${ENCRYPT_ROOT} == 'true' ]] && [[ -n ${HOME_PART} ]]; then
+  err_exit "can't encrypt root and specify home partition at the same time"
+fi
+
+if [[ ${ENCRYPT_ROOT} == 'true' ]] && [[ -n ${HOME_SIZE} ]]; then
+  err_exit "can't encrypt root and specify home partition at the same time"
+fi
+
+if [[ ${ENCRYPT_ROOT} == 'true' ]] && [[ -n ${VAR_PART} ]]; then
+  err_exit "can't encrypt root and specify var partition at the same time"
+fi
+
+if [[ ${ENCRYPT_ROOT} == 'true' ]] && [[ -n ${VAR_SIZE} ]]; then
+  err_exit "can't encrypt root and specify var partition at the same time"
+fi
+
+if [[ ${ENCRYPT_ROOT} == 'true' ]] && [[ ${YES} == 'true' ]]; then
+  err_exit "can't encrypt and use yes at the same time"
+fi
+
+if [[ ${ENCRYPT_HOME} == 'true' ]] && [[ ${YES} == 'true' ]]; then
+  err_exit "can't encrypt and use yes at the same time"
+fi
+
+if [[ -e ${PART_ENC} ]]; then
+  err_exit "encrypted partitions ${PART_ENC} already exists"
+fi
+
+if [[ ${#LABEL} -gt 11 ]]; then
+  err_exit "label can't be longer than 11 chars (with suffix _root limit is 16)"
+fi
+
+umask | grep -q '0022' || err_exit 'set umask to 0022'
+stat -c '%a' /etc/resolv.conf | grep -q 644 \
+  || err_exit 'set resolv.conf perms to 644'
+
+
+# set variables
+# =============
 
 if [[ "${DEV}" =~ /dev/[sn].* ]]; then
   DEV_TYPE='device'
@@ -354,7 +401,7 @@ else
 fi
 
 SIZE="$(( BOOT_SIZE_B + ROOT_SIZE_B + HOME_SIZE_B + VAR_SIZE_B ))"
-[ "${DEV_TYPE}" == 'dir' ] && ROOT_DIR="${DEV}"
+[[ "${DEV_TYPE}" == 'dir' ]] && ROOT_DIR="${DEV}"
 
 # chroot command interpreter
 CCMD="chroot ${ROOT_DIR} env -i DEBIAN_FRONTEND=noninteractive TERM=linux PATH=/usr/bin:/usr/sbin"
@@ -377,18 +424,32 @@ readonly DEV ROOT_DIR PUB_SSH_FILE ENCRYPT_HOME ENCRYPT_ROOT PURGE UEFI_FORCE \
 
 command -v sgdisk >/dev/null || err_exit 'sgdisk from gdisk missing'
 command -v partprobe  >/dev/null || err_exit 'partprobe from parted missing'
+command -v debootstrap  >/dev/null || err_exit 'debootstrap missing'
+command -v numfmt  >/dev/null || err_exit 'numfmt missing from coreutils'
+command -v parted  >/dev/null || err_exit 'parted missing'
+command -v mkfs.ext4  >/dev/null || err_exit 'mkfs.ext4 missing'
+command -v perl  >/dev/null || err_exit 'perl missing from perl-base'
 
-if [ "${INST_TYPE}" == 'uefi' ]; then
+if [[ ! -e "${KEYRING}" ]]; then
+  err_exit "${KEYRING} doesn't exist"
+fi
+
+mount -V | grep -q 'util-linux' \
+  || err_exit 'mount command needs to be from util-linux, not busybox'
+
+if [[ "${INST_TYPE}" == 'uefi' ]]; then
   command -v mkfs.fat  >/dev/null || err_exit 'mkfs.fat from dosfstools missing'
 fi
 
-if [ "${DEV_TYPE}" != 'dir' ]; then
+if [[ "${DEV_TYPE}" != 'dir' ]]; then
   [[ -z "${BOOT_SIZE}" ]] && err_exit 'boot partition size not defined'
   [[ -z "${ROOT_SIZE}" ]] && err_exit 'root partition size not defined'
 fi
 
 [[ -z "${LABEL}" ]] && err_exit 'label prefix not defined'
 
+# disable "ERROR: label prefix 'main' already exists" if the disk is about to be purged
+label_exists='false'
 blkid -s PARTLABEL -o value \
   | grep -q \
     -e ${LABEL}-grub \
@@ -396,25 +457,41 @@ blkid -s PARTLABEL -o value \
     -e ${LABEL}-root \
     -e ${LABEL}-home \
     -e ${LABEL}-var \
-  && err_exit "label prefix '${LABEL}' already exists"
+  && label_exists='true'
+
+if [[ "${label_exists}" == 'true' ]];
+  if [[ ${PURGE} == 'true' ]] && [[ DEV_TYPE == 'device' ]]; then
+    blkid -s PARTLABEL -o value ${DEV}* \
+      | grep -q \
+        -e ${LABEL}-grub \
+        -e ${LABEL}-boot \
+        -e ${LABEL}-root \
+        -e ${LABEL}-home \
+        -e ${LABEL}-var \
+      || err_exit "label prefix '${LABEL}' already exists on a different disk"
+  else
+    err_exit "label prefix '${LABEL}' already exists - use purge"
+  fi
+fi
+unset label_exists
 
 findmnt "${ROOT_DIR}" && err_exit "${ROOT_DIR} already mounted"
-[ "${ROOT_DIR}" == '' ] && err_exit "ROOT_DIR is empty"
-[ "${ROOT_DIR}" == '/' ] && err_exit "/ as ROOT_DIR not allowed"
+[[ "${ROOT_DIR}" == '' ]] && err_exit 'ROOT_DIR is empty'
+[[ "${ROOT_DIR}" == '/' ]] && err_exit '/ as ROOT_DIR not allowed'
 
-if [ "${DEV_TYPE}" == 'file' ]; then
+if [[ "${DEV_TYPE}" == 'file' ]]; then
   command -v qemu-img >/dev/null || err_exit 'qemu-img from qemu-utils missing'
 fi
 
-if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
+if [[ "${DEV_TYPE}" == 'volume_group' ]] && [[ -n "${DEV}" ]]; then
   lvdisplay \
   | grep '  LV Name  ' \
   | grep -q \
-    -e ${LABEL_UNDER}_grub \
-    -e ${LABEL_UNDER}_boot \
-    -e ${LABEL_UNDER}_root \
-    -e ${LABEL_UNDER}_home \
-    -e ${LABEL_UNDER}_var \
+    -e "${LABEL_UNDER}_grub" \
+    -e "${LABEL_UNDER}_boot" \
+    -e "${LABEL_UNDER}_root" \
+    -e "${LABEL_UNDER}_home" \
+    -e "${LABEL_UNDER}_var" \
   && err_exit "logical volumes with prefix '${LABEL_UNDER}' already exist"
 
   if [[ ${DEV} == *-* ]]; then
@@ -435,18 +512,18 @@ fi
 # =========
 
 get_free_space() {
-  [ "${DEV_TYPE}" == 'file' ] && return
-  [ "${DEV_TYPE}" == 'dir' ] && return
-  [ -z "${DEV}" ] && return
+  [[ "${DEV_TYPE}" == 'file' ]] && return
+  [[ "${DEV_TYPE}" == 'dir' ]] && return
+  [[ -z "${DEV}" ]] && return
 
-  if [ "${DEV_TYPE}" == 'device' ]; then
+  if [[ "${DEV_TYPE}" == 'device' ]]; then
     FREE_SPACE="$(parted "${DEV}" unit B print free \
       | grep 'Free Space' \
       | tail -n1 \
       | awk '{print $3}' \
       | tr -d 'B')"
 
-  elif [ "${DEV_TYPE}" == 'volume_group' ]; then
+  elif [[ "${DEV_TYPE}" == 'volume_group' ]]; then
     FREE_SPACE="$(vgs "${DEV}" --units=B --rows \
       | grep 'VFree ' \
       | awk '{print $2}' \
@@ -488,7 +565,7 @@ partsync() {
 }
 
 purge_partitions() {
-  [ "${DEV_TYPE}" == 'dir' ] && return
+  [[ "${DEV_TYPE}" == 'dir' ]] && return
 
   echo '+ purging existing partitions...'
   sgdisk --zap-all "${DEV}" && partsync
@@ -517,14 +594,14 @@ get_partitions() {
       | tail -n1 \
       2> /dev/null)"
 
-    if [[ -z "${last_part}" ]] || [ "${PURGE}" == 'true' ]; then
+    if [[ -z "${last_part}" ]] || [[ "${PURGE}" == 'true' ]]; then
       last_part=0
       INST_TYPE='bios'
     else
       INST_TYPE='uefi'
     fi
 
-    if [ "${UEFI_FORCE}" == 'true' ]; then
+    if [[ "${UEFI_FORCE}" == 'true' ]]; then
       INST_TYPE='uefi'
     fi
 
@@ -536,7 +613,7 @@ get_partitions() {
       disk_dev="${DEV}"
     fi
 
-    if [ "${INST_TYPE}" == "bios" ]; then
+    if [[ "${INST_TYPE}" == "bios" ]]; then
       GRUB_PART="${disk_dev}$((++last_part))"
       GRUB_PART_N="${last_part}"
     fi
@@ -592,9 +669,17 @@ get_partitions() {
 }
 
 create_partitions() {
-  [ "${DEV_TYPE}" == 'dir' ] && return
+  [[ "${DEV_TYPE}" == 'dir' ]] && return
 
-  if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
+  if [[ "${DEV_TYPE}" == 'device' ]]; then
+    if gdisk -l "${DEV}" | grep -q 'GPT: not present'; then
+      echo "+ creating gpt partition table on ${DEV}..."
+      sgdisk -g "${DEV}"
+      partsync
+    fi
+  fi
+
+  if [[ "${DEV_TYPE}" == 'volume_group' ]] && [[ -n "${DEV}" ]]; then
     echo '+ creating logical volumes...'
 
     lvcreate -y -W y -L "${BOOT_SIZE}" "${DEV}" -n "${LABEL_UNDER}_boot"
@@ -625,7 +710,7 @@ create_partitions() {
     return
   fi
 
-  if [ "${DEV_TYPE}" == 'file' ]; then
+  if [[ "${DEV_TYPE}" == 'file' ]]; then
     echo '+ preparing vm file...'
     qemu-img create -f raw "${DEV}" "$(( SIZE + 10*1024*1024 ))"
     sgdisk -g "${DEV}" && partsync
@@ -633,7 +718,7 @@ create_partitions() {
 
   partsync
 
-  if [ "${INST_TYPE}" == 'bios' ]; then
+  if [[ "${INST_TYPE}" == 'bios' ]]; then
     echo '+ creating grub partition...'
     sgdisk --new "${GRUB_PART_N}::+2M" \
       -u "${GRUB_PART_N}:${UUID_GRUB}" "${DEV}" && partsync
@@ -645,17 +730,16 @@ create_partitions() {
     sgdisk -c "${GRUB_PART_N}:${LABEL}-grub" "${DEV}" && partsync
   fi
 
-
   echo '+ creating boot partition...'
   sgdisk --new "${BOOT_PART_N}:+2M:+${BOOT_SIZE}" \
     -u "${BOOT_PART_N}:${UUID_BOOT}" "${DEV}" && partsync
 
-  if [ "${INST_TYPE}" == 'bios' ]; then
+  if [[ "${INST_TYPE}" == 'bios' ]]; then
     # set legacy bios bootable attribute on boot device;
     # grub ignores it, but syslinux does not
     sgdisk --attributes "${BOOT_PART_N}:set:2" "${DEV}" && partsync
 
-  elif [ "${INST_TYPE}" == 'uefi' ]; then
+  elif [[ "${INST_TYPE}" == 'uefi' ]]; then
     # mark the boot partition as EFI system partition
     sgdisk -t "${BOOT_PART_N}:ef00" "${DEV}" && partsync
   fi
@@ -671,7 +755,7 @@ create_partitions() {
   # name the root partition
   sgdisk -c "${ROOT_PART_N}:${LABEL}-root" "${DEV}" && partsync
 
-  if [ ${ENCRYPT_ROOT} == 'false' ]; then
+  if [[ ${ENCRYPT_ROOT} == 'false' ]]; then
     # mark the root partition as linux filesystem
     sgdisk -t "${ROOT_PART_N}:8300" "${DEV}" && partsync
   else
@@ -695,7 +779,7 @@ create_partitions() {
     sgdisk -c "${VAR_PART_N}:${LABEL}-var" "${DEV}" && partsync
   fi
 
-  if [ "${DEV_TYPE}" == 'file' ]; then
+  if [[ "${DEV_TYPE}" == 'file' ]]; then
     losetup -Pf "${DEV}"
   fi
 
@@ -703,26 +787,26 @@ create_partitions() {
 }
 
 create_filesystems() {
-  [ "${DEV_TYPE}" == 'dir' ] && return
+  [[ "${DEV_TYPE}" == 'dir' ]] && return
 
   echo '+ creating boot filesystem...'
-  if [ "${INST_TYPE}" == 'bios' ]; then
+  if [[ "${INST_TYPE}" == 'bios' ]]; then
     mkfs.ext4 -F -L "${LABEL}-boot" -U "${UUID_BOOT}" "${BOOT_PART}"
 
-  elif [ "${INST_TYPE}" == 'uefi' ]; then
+  elif [[ "${INST_TYPE}" == 'uefi' ]]; then
     mkfs.fat -i "${UUID_BOOT_FAT}" -n "${LABEL}-boot" -F32 "${BOOT_PART}"
   fi
 
-  if [ ${ENCRYPT_ROOT} == 'false' ]; then
+  if [[ ${ENCRYPT_ROOT} == 'false' ]]; then
     echo '+ creating root filesystem...'
     mkfs.ext4 -F -L "${LABEL}-root" -U "${UUID_ROOT}" "${ROOT_PART}"
   fi
 
   if [[ -n "${HOME_SIZE}" ]]; then
     echo '+ creating home filesystem...'
-    if [ ${ENCRYPT_HOME} == 'false' ]; then
+    if [[ ${ENCRYPT_HOME} == 'false' ]]; then
       mkfs.ext4 -F -L "${LABEL}-home" -U "${UUID_HOME}" "${HOME_PART}"
-    elif [ ${ENCRYPT_HOME} == 'true' ]; then
+    elif [[ ${ENCRYPT_HOME} == 'true' ]]; then
       cryptsetup -v \
         --type luks2 \
         --cipher aes-xts-plain64 \
@@ -739,7 +823,7 @@ create_filesystems() {
     fi
   fi
 
-  if [ ${ENCRYPT_ROOT} == 'true' ]; then
+  if [[ ${ENCRYPT_ROOT} == 'true' ]]; then
     cryptsetup -v \
       --type luks2 \
       --cipher aes-xts-plain64 \
@@ -763,12 +847,12 @@ create_filesystems() {
 }
 
 mount_partitions() {
-  [ "${DEV_TYPE}" == 'dir' ] && return
+  [[ "${DEV_TYPE}" == 'dir' ]] && return
 
   echo '+ mounting partitions...'
   mkdir -p "${ROOT_DIR}"
 
-  if [ "${ENCRYPT_ROOT}" == true ]; then
+  if [[ "${ENCRYPT_ROOT}" == true ]]; then
     mount -o sync "${PART_ENC}" "${ROOT_DIR}"
   else
     mount -o sync "${ROOT_PART}" "${ROOT_DIR}"
@@ -778,7 +862,7 @@ mount_partitions() {
   mount -o sync "${BOOT_PART}" "${ROOT_DIR}/boot"
 
   if [[ -n "${HOME_SIZE}" ]]; then
-    if [ "${ENCRYPT_HOME}" == true ]; then
+    if [[ "${ENCRYPT_HOME}" == true ]]; then
       mount -o sync "${PART_ENC}" "${ROOT_DIR}/home"
     else
       mount -o sync "${HOME_PART}" "${ROOT_DIR}/home"
@@ -791,17 +875,17 @@ mount_partitions() {
 }
 
 set_fstab() {
-  [ "${DEV_TYPE}" == 'dir' ] && return
+  [[ "${DEV_TYPE}" == 'dir' ]] && return
 
   echo '+ configuring fstab...'
 
   local uuid_boot
   local boot_fs_type='ext4'
 
-  if [ "${INST_TYPE}" == 'bios' ]; then
+  if [[ "${INST_TYPE}" == 'bios' ]]; then
     uuid_boot="${UUID_BOOT}"
 
-  elif [ "${INST_TYPE}" == 'uefi' ]; then
+  elif [[ "${INST_TYPE}" == 'uefi' ]]; then
     uuid_boot="${UUID_BOOT_FAT^^}"
     uuid_boot="${uuid_boot:0:4}-${uuid_boot:4:8}"
     boot_fs_type='vfat'
@@ -821,7 +905,7 @@ UUID=${UUID_ROOT}  /      ext4  rw,lazytime,noiversion  0 1
 UUID=${uuid_boot}  /boot  ${boot_fs_type}  rw,sync,noiversion      0 2
 EOF
 
-  if [ "${ENCRYPT_ROOT}" == true ]; then
+  if [[ "${ENCRYPT_ROOT}" == true ]]; then
     echo "${PART_ENC}        /      ext4  rw,lazytime,noiversion  0 1" >> ${ROOT_DIR}/etc/fstab
   else
     echo "UUID=${UUID_ROOT}  /      ext4  rw,lazytime,noiversion  0 1" >> ${ROOT_DIR}/etc/fstab
@@ -955,7 +1039,7 @@ EOF
 }
 
 install_bootloader() {
-  [ "${DEV_TYPE}" == 'dir' ] && return
+  [[ "${DEV_TYPE}" == 'dir' ]] && return
 
   echo '+ installing grub...'
   local dev
@@ -965,18 +1049,18 @@ install_bootloader() {
   'file'         ) dev=${LOOP_DEV} ;;
   esac
 
-  if [ "${INST_TYPE}" == 'bios' ]; then
+  if [[ "${INST_TYPE}" == 'bios' ]]; then
     ${CCMD} apt-get -y install grub2
     ${CCMD} grub-install --target=i386-pc ${dev} --locales=
 
-  elif [ "${INST_TYPE}" == 'uefi' ]; then
+  elif [[ "${INST_TYPE}" == 'uefi' ]]; then
     ${CCMD} apt-get -y install grub-efi-amd64
     ${CCMD} grub-install --efi-directory=/boot --target=x86_64-efi --locales= --bootloader-id=debian
   fi
 
   # default linux cmdline parameters for grub
   local p
-  if [ "${ENCRYPT_ROOT}" == true ]; then
+  if [[ "${ENCRYPT_ROOT}" == true ]]; then
     p="root=LABEL=${MAP_DEV}"
   else
     p="root=LABEL=${LABEL}-root"
@@ -987,7 +1071,7 @@ install_bootloader() {
     p+=' nomodeset console=ttyS0,115200n8'
   fi
 
-  if [ "${ENCRYPT_ROOT}" == true ]; then
+  if [[ "${ENCRYPT_ROOT}" == true ]]; then
     echo "${MAP_DEV} PARTLABEL=${LABEL}-root none luks" > ${ROOT_DIR}/etc/crypttab
     ${CCMD} apt-get -y install cryptsetup-initramfs
     #${CCMD} update-initramfs -u
@@ -1039,7 +1123,7 @@ unmount() {
   echo '+ unmounting...'
 
   echo 'unmounting virtual filesystems...'
-  if [ "${INST_TYPE}" == 'uefi' ]; then
+  if [[ "${INST_TYPE}" == 'uefi' ]]; then
     ${CCMD} umount /sys/firmware/efi/efivars
   fi
   umount ${ROOT_DIR}/dev/pts && sleep 0.1
@@ -1056,7 +1140,7 @@ unmount() {
     umount ${ROOT_DIR}/var && sleep 0.1
   fi
 
-  if [ "${DEV_TYPE}" != 'dir' ]; then
+  if [[ "${DEV_TYPE}" != 'dir' ]]; then
     echo 'unmounting /boot...'
     umount  ${ROOT_DIR}/boot && sleep 0.1
   fi
@@ -1065,22 +1149,26 @@ unmount() {
   umount ${ROOT_DIR}/proc && sleep 0.1
 
   echo 'unmounting root...'
-  if [ "${DEV_TYPE}" != 'dir' ]; then
+  if [[ "${DEV_TYPE}" != 'dir' ]]; then
     umount  ${ROOT_DIR}/ && sleep 0.1
   fi
 
-  # todo: add root
-  if [ "${ENCRYPT_HOME}" == 'true' ]; then
-    echo 'closing luks device...'
+  if [[ "${ENCRYPT_ROOT}" == 'true' ]]; then
+    echo 'closing root luks device...'
     cryptsetup luksClose ${MAP_DEV} && sleep 0.1
   fi
 
-  if [ "${DEV_TYPE}" == 'file' ]; then
+  if [[ "${ENCRYPT_HOME}" == 'true' ]]; then
+    echo 'closing home luks device...'
+    cryptsetup luksClose ${MAP_DEV} && sleep 0.1
+  fi
+
+  if [[ "${DEV_TYPE}" == 'file' ]]; then
     echo 'removing loop device...'
     losetup -d "${LOOP_DEV}" && sleep 0.1
   fi
 
-  echo done unmounting.
+  echo 'done unmounting.'
 }
 
 
@@ -1090,7 +1178,7 @@ unmount() {
 get_partitions
 
 # get free space info early if we're not purging
-if [ "${PURGE}" == 'false' ]; then
+if [[ "${PURGE}" == 'false' ]]; then
   get_free_space
 fi
 
@@ -1111,14 +1199,14 @@ var size             ${VAR_SIZE}
 
 install size         $(numfmt --to=iec-i --suffix=B --format="%.2f" ${SIZE})"
 
-if [ "${DEV_TYPE}" == 'device' ] && [ -n "${DEV}" ] && [ ${PURGE} == 'false' ]; then
+if [[ "${DEV_TYPE}" == 'device' ]] && [[ -n "${DEV}" ]] && [[ ${PURGE} == 'false' ]]; then
   echo -n "free space           "
-  numfmt --to=iec-i --suffix=B --format="%.2f" ${FREE_SPACE}
+  numfmt --to='iec-i' --suffix='B' --format='%.2f' ${FREE_SPACE}
 fi
 
-if [ "${DEV_TYPE}" == 'volume_group' ] && [ -n "${DEV}" ]; then
-  echo -n "free space           "
-  numfmt --to=iec-i --suffix=B --format="%.2f" ${FREE_SPACE}
+if [[ "${DEV_TYPE}" == 'volume_group' ]] && [[ -n "${DEV}" ]]; then
+  echo -n 'free space           '
+  numfmt --to='iec-i' --suffix='B' --format='%.2f' ${FREE_SPACE}
 fi
 
 if [[ "${PURGE}" == 'true' ]]; then
@@ -1126,7 +1214,7 @@ if [[ "${PURGE}" == 'true' ]]; then
 fi
 
 echo -e '\nexisting disk layout:'
-if [ -b "${DEV}" ]; then
+if [[ -b "${DEV}" ]]; then
   lsblk -o NAME,SIZE,FSUSED,TYPE,FSTYPE,MOUNTPOINT "${DEV}" \
     | tail -n +2
 fi
@@ -1138,7 +1226,7 @@ fi
 
 
 # main
-# =======
+# ====
 
 if [[ ${SUITE} == 'kali-last-snapshot' ]]; then
   get_kali_keyring
@@ -1171,7 +1259,7 @@ mount --bind /dev/pts ${ROOT_DIR}/dev/pts
 mount --bind /proc ${ROOT_DIR}/proc
 mount --bind /sys ${ROOT_DIR}/sys
 mount --types tmpfs tmpfs ${ROOT_DIR}/var/tmp
-if [ "${INST_TYPE}" == 'uefi' ]; then
+if [[ "${INST_TYPE}" == 'uefi' ]]; then
   ${CCMD} mount -t efivarfs none /sys/firmware/efi/efivars
 fi
 
@@ -1182,7 +1270,7 @@ set_apt
 set_locale
 set_keyboard
 
-if [ "${DEV_TYPE}" != 'dir' ]; then
+if [[ "${DEV_TYPE}" != 'dir' ]]; then
   echo '+ installing kernel...'
   ${CCMD} apt-get -y --no-install-recommends install linux-image-amd64 zstd
 fi
