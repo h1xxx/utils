@@ -16,18 +16,18 @@ usage() {
 -k, --public-key      path to a public ssh key file to include in image
 -y, --yes             don't ask for permission to continue
 
--e, --encrypt-home    encrypt home partition
--w, --encrypt-root    encrypt whole root partition
+--encrypt-home        encrypt home partition
+--encrypt-root        encrypt whole root partition
 -p, --purge-all       remove all existing partitions from device (default is to
                       create new partitions on existing free disk space)
--u, --uefi            force uefi install
+-e, --efi, --uefi     force uefi install
 
 --uri                 uri for apt package download
 --suite               suite of apt packages to download
 
 -b, --boot-size       boot partition size
 -r, --root-size       root partition size
--h, --home-size       home partition size (omit if not defined)
+-u, --home-size       user home partition size (omit if not defined)
 -v, --var-size        var partition size (omit if not defined)
 
 --boot-part           existing boot partition path to utilize
@@ -35,21 +35,59 @@ usage() {
 --home-part           existing home partition path to utilize
 --var-part            existing var partition path to utilize
 
---raid                provide another disk device for RAID1 install
+--raid                install on existing raid partitions
+--skip-unmount        do not unmount and do not close disks after the install
 
+--examples            print examples of usage
+--raid-example        print example of raid installation
 --help                this help message
+"
+  exit 0
+}
 
-
-install all deps:
+examples() {
+  echo "examples:
+# install all deps
 apt install uuid-runtime gdisk parted debootstrap mkfs.ext4 perl-base dosfstools
 
-examples:
+# install and purge existing disk
+./debian_installer -t /dev/sdz -l main -i enp1s0 -k ~/.ssh/authorized_keys -b 512M -r 64G -u 32G -v 32G -p
 
-./debian_installer -t /dev/sdz -b 512M -r 128G
-./debian_installer -t /dev/sdz -b 512M -r 64G -u 32G -v 32G -p
-./debian_installer -t /dev/sdz -b 1G -r 64G --boot-part=/dev/sdz1 --root-part=/dev/sdz2
-./debian_installer -t ~/dummy_vm.img -i enp1s0 -l dummy-1 -k ~/.ssh/authorized_keys -b 128M -r 4G
+# install on existing partitions
+./debian_installer -l main -i enp1s0 -k ~/.ssh/authorized_keys --boot-part=/dev/sdz1 --root-part=/dev/sdz2
+
+# create a vm
+./debian_installer -t ./vm.img -l main -i enp1s0 -k ~/.ssh/authorized_keys -b 128M -r 4G
 "
+  exit 0
+}
+
+raid_example() {
+  echo '
+disk1="/dev/nvme0n1"
+disk2="/dev/nvme1n1"
+boot_size="1024M"
+root_size="64G"
+var_size="128G"
+lvm_size="700G"
+sgdisk --zap-all "${disk1}"
+sgdisk --zap-all "${disk2}"
+partprobe
+sgdisk --new "1::+${boot_size}" "${disk1}"
+sgdisk --new "1::+${boot_size}" "${disk2}"
+sgdisk --new "2::+${root_size}" "${disk1}"
+sgdisk --new "2::+${root_size}" "${disk2}"
+sgdisk --new "3::+${var_size}" "${disk1}"
+sgdisk --new "3::+${var_size}" "${disk2}"
+sgdisk --new "4::+${lvm_size}" "${disk1}"
+sgdisk --new "4::+${lvm_size}" "${disk2}"
+partprobe
+mdadm --create /dev/md/boot --level=1 --raid-devices=2 --metadata 1.0 ${disk1}p1 ${disk2}p1
+mdadm --create /dev/md/root --level=1 --raid-devices=2 --metadata 1.2 ${disk1}p2 ${disk2}p2
+mdadm --create /dev/md/var  --level=1 --raid-devices=2 --metadata 1.2 ${disk1}p3 ${disk2}p3
+mdadm --create /dev/md/lvm  --level=1 --raid-devices=2 --metadata 1.2 ${disk1}p4 ${disk2}p4
+./debian_installer -l srv -i enp65s0 -k ~/.ssh/authorized_keys --boot-part /dev/md/boot --root-part /dev/md/root --var-part /dev/md/var --raid -e
+'
   exit 0
 }
 
@@ -96,6 +134,11 @@ PURGE=false
 # force uefi
 UEFI_FORCE=false
 
+# installation on raid volumes
+RAID=false
+
+# do not unmount at the end of the script
+SKIP_UNMOUNT=false
 
 # size of partitions and total size
 BOOT_SIZE=
@@ -178,12 +221,13 @@ KEYRING='/usr/share/keyrings/debian-archive-keyring.gpg'
 # parse args
 # ==========
 
-opts='t:i:s:g:d:l:k:yewpub:r:h:v:'
+opts='t:i:s:g:d:l:k:yepuhb:r:v:'
 
 long='target:,iface:,static-ip:,static-gw:,dns-server:,label:,public-key:,'
-long+='yes,encrypt-home,encrypt-root,purge-all,uefi,uri:,suite:,'
+long+='yes,encrypt-home,encrypt-root,purge-all,efi,uefi,uri:,suite:,'
 long+='boot-size:,root-size:,home-size:,var-size:,'
-long+='boot-part:,root-part:,home-part:,var-part,help'
+long+='boot-part:,root-part:,home-part:,var-part:,'
+long+='raid,skip-unmount,help,examples,raid-example'
 
 parsed_opts=$(getopt -o=${opts} --long=${long} --name "$0" -- "$@")
 
@@ -223,11 +267,11 @@ while [[ ${#} -gt 0 ]]; do
     readonly YES='true'
     shift
     ;;
-  -e | --encrypt-home)
+  --encrypt-home)
     readonly ENCRYPT_HOME='true'
     shift
     ;;
-  -w | --encrypt-root)
+  --encrypt-root)
     readonly ENCRYPT_ROOT='true'
     shift
     ;;
@@ -235,7 +279,7 @@ while [[ ${#} -gt 0 ]]; do
     readonly PURGE=true
     shift
     ;;
-  -u | --uefi)
+  -e | --efi | --uefi)
     readonly UEFI_FORCE=true
     shift
     ;;
@@ -259,7 +303,7 @@ while [[ ${#} -gt 0 ]]; do
     readonly ROOT_SIZE="${2}"
     shift 2
     ;;
-  -h | --home-size)
+  -u | --home-size)
     HOME_SIZE_B="$(numfmt --from=iec "${2}")"
     readonly HOME_SIZE_B
     readonly HOME_SIZE="${2}"
@@ -287,7 +331,21 @@ while [[ ${#} -gt 0 ]]; do
     readonly VAR_PART="${2}"
     shift 2
     ;;
-  --help)
+  --raid)
+    readonly RAID='true'
+    shift
+    ;;
+  --skip-unmount)
+    readonly SKIP_UNMOUNT='true'
+    shift
+    ;;
+  --examples)
+    examples
+    ;;
+  --raid-example)
+    raid_example
+    ;;
+  -h | --help)
     usage
     ;;
   *)
@@ -324,12 +382,18 @@ if [[ -n "${STATIC_IP}" ]] && [[ ! "${STATIC_IP}" =~ .*/.* ]]; then
     err_exit 'static ip needs to have a netmask suffix defined'
 fi
 
+if [[ -n "${DEV}" ]]; then
+  if [[ -n "${BOOT_PART}" ]] || [[ -n "${ROOT_PART}" ]]; then
+    err_exit "can't define target device and root+boot partition paths"
+  fi
+fi
+
 if [[ -z "${DEV}" ]]; then
-  if [[ -z "${BOOT_PART}" ]] || [[ -z "${ROOT_PART}" ]] ; then
+  if [[ -z "${BOOT_PART}" ]] || [[ -z "${ROOT_PART}" ]]; then
     err_exit 'missing target device or root+boot partition paths'
   fi
 else
-  if [[ -n "${BOOT_PART}" ]] || [[ -n "${ROOT_PART}" ]] ; then
+  if [[ -n "${BOOT_PART}" ]] || [[ -n "${ROOT_PART}" ]]; then
     err_exit "either target device or root+boot partition paths must be defined"
   fi
 fi
@@ -362,12 +426,16 @@ if [[ ${ENCRYPT_HOME} == 'true' ]] && [[ ${YES} == 'true' ]]; then
   err_exit "can't encrypt and use yes at the same time"
 fi
 
-if [[ -e ${PART_ENC} ]]; then
-  err_exit "encrypted partitions ${PART_ENC} already exists"
+if [[ ${ENCRYPT_ROOT} == 'true' ]] && [[ -e ${PART_ENC} ]]; then
+  err_exit "encrypted partition ${PART_ENC} already exists"
 fi
 
 if [[ ${#LABEL} -gt 11 ]]; then
   err_exit "label can't be longer than 11 chars (with suffix _root limit is 16)"
+fi
+
+if [[ "${RAID}" == 'true' ]] && [[ "${UEFI_FORCE}" == 'false' ]]; then
+  err_exit 'raid install requires uefi in this script'
 fi
 
 umask | grep -q '0022' || err_exit 'set umask to 0022'
@@ -390,6 +458,7 @@ elif [[ -z "${DEV}" ]]; then
   else
     DEV_TYPE='device'
   fi
+  unset dm
 
 else
   if vgs "${DEV}" >/dev/null 2>&1; then
@@ -442,13 +511,14 @@ if [[ "${INST_TYPE}" == 'uefi' ]]; then
 fi
 
 if [[ "${DEV_TYPE}" != 'dir' ]]; then
-  [[ -z "${BOOT_SIZE}" ]] && err_exit 'boot partition size not defined'
-  [[ -z "${ROOT_SIZE}" ]] && err_exit 'root partition size not defined'
+  [[ -z "${BOOT_SIZE}" ]] && [[ -z "${BOOT_PART}" ]] \
+    && err_exit 'boot partition not defined'
+  [[ -z "${ROOT_SIZE}" ]] && [[ -z "${ROOT_PART}" ]] \
+    && err_exit 'root partition not defined'
 fi
 
 [[ -z "${LABEL}" ]] && err_exit 'label prefix not defined'
 
-# disable "ERROR: label prefix 'main' already exists" if the disk is about to be purged
 label_exists='false'
 blkid -s PARTLABEL -o value \
   | grep -q \
@@ -459,8 +529,8 @@ blkid -s PARTLABEL -o value \
     -e ${LABEL}-var \
   && label_exists='true'
 
-if [[ "${label_exists}" == 'true' ]];
-  if [[ ${PURGE} == 'true' ]] && [[ DEV_TYPE == 'device' ]]; then
+if [[ "${label_exists}" == 'true' ]]; then
+  if [[ "${PURGE}" == 'true' ]] && [[ "${DEV_TYPE}" == 'device' ]]; then
     blkid -s PARTLABEL -o value ${DEV}* \
       | grep -q \
         -e ${LABEL}-grub \
@@ -629,6 +699,8 @@ get_partitions() {
 
     [[ -n "${VAR_SIZE}" ]] && VAR_PART="${disk_dev}$((++last_part))"
     [[ -n "${VAR_SIZE}" ]] && VAR_PART_N="${last_part}"
+
+    unset disk_dev
     ;;
 
   'volume_group' )
@@ -670,14 +742,7 @@ get_partitions() {
 
 create_partitions() {
   [[ "${DEV_TYPE}" == 'dir' ]] && return
-
-  if [[ "${DEV_TYPE}" == 'device' ]]; then
-    if gdisk -l "${DEV}" | grep -q 'GPT: not present'; then
-      echo "+ creating gpt partition table on ${DEV}..."
-      sgdisk -g "${DEV}"
-      partsync
-    fi
-  fi
+  [[ -z "${DEV}" ]] && return
 
   if [[ "${DEV_TYPE}" == 'volume_group' ]] && [[ -n "${DEV}" ]]; then
     echo '+ creating logical volumes...'
@@ -714,6 +779,14 @@ create_partitions() {
     echo '+ preparing vm file...'
     qemu-img create -f raw "${DEV}" "$(( SIZE + 10*1024*1024 ))"
     sgdisk -g "${DEV}" && partsync
+  fi
+
+  if [[ "${DEV_TYPE}" == 'device' ]]; then
+    if gdisk -l "${DEV}" | grep -q 'GPT: not present'; then
+      echo "+ creating gpt partition table on ${DEV}..."
+      sgdisk -g "${DEV}"
+      partsync
+    fi
   fi
 
   partsync
@@ -802,7 +875,7 @@ create_filesystems() {
     mkfs.ext4 -F -L "${LABEL}-root" -U "${UUID_ROOT}" "${ROOT_PART}"
   fi
 
-  if [[ -n "${HOME_SIZE}" ]]; then
+  if [[ -n "${HOME_SIZE}" ]] || [[ -n "${HOME_PART}" ]]; then
     echo '+ creating home filesystem...'
     if [[ ${ENCRYPT_HOME} == 'false' ]]; then
       mkfs.ext4 -F -L "${LABEL}-home" -U "${UUID_HOME}" "${HOME_PART}"
@@ -840,7 +913,7 @@ create_filesystems() {
   fi
       #--pbkdf pbkdf2 \
 
-  if [[ -n "${VAR_SIZE}" ]]; then
+  if [[ -n "${VAR_SIZE}" ]] || [[ -n "${VAR_PART}" ]]; then
     echo '+ creating var filesystem...'
     mkfs.ext4 -F -L "${LABEL}-var" -U "${UUID_VAR}" "${VAR_PART}"
   fi
@@ -861,7 +934,7 @@ mount_partitions() {
   mkdir -p ${ROOT_DIR}/{boot,home,var}
   mount -o sync "${BOOT_PART}" "${ROOT_DIR}/boot"
 
-  if [[ -n "${HOME_SIZE}" ]]; then
+  if [[ -n "${HOME_SIZE}" ]] || [[ -n "${HOME_PART}" ]]; then
     if [[ "${ENCRYPT_HOME}" == true ]]; then
       mount -o sync "${PART_ENC}" "${ROOT_DIR}/home"
     else
@@ -869,7 +942,7 @@ mount_partitions() {
     fi
   fi
 
-  if [[ -n "${VAR_SIZE}" ]]; then
+  if [[ -n "${VAR_SIZE}" ]] || [[ -n "${VAR_PART}" ]]; then
     mount -o sync "${VAR_PART}" "${ROOT_DIR}/var"
   fi
 }
@@ -878,6 +951,37 @@ set_fstab() {
   [[ "${DEV_TYPE}" == 'dir' ]] && return
 
   echo '+ configuring fstab...'
+
+  cat > ${ROOT_DIR}/etc/fstab << EOF
+proc   /proc     proc   rw,nosuid,nodev,noexec,hidepid=2,gid=0 0 0
+sys    /sys      sysfs  rw,nosuid,nodev,noexec                 0 0
+run    /run      tmpfs  rw,nosuid,nodev,mode=0755              0 0
+tmp    /tmp      tmpfs  rw,nosuid,nodev,mode=0777,size=80%     0 0
+
+shm    /dev/shm  tmpfs  rw,nosuid,noexec,mode=1777             0 0
+devpts /dev/pts  devpts rw,nosuid,noexec,mode=0620,gid=5       0 0
+lock   /run/lock tmpfs  rw,nosuid,nodev,noexec,mode=1777       0 0
+EOF
+
+  if [[ "${RAID}" == 'true' ]]; then
+    ${CCMD} apt-get -y install mdadm
+    echo '/dev/md/root  /        ext4   rw,lazytime,noiversion  0 1' \
+      >> ${ROOT_DIR}/etc/fstab
+    echo '/dev/md/boot  /boot    vfat   rw,sync,noiversion      0 2' \
+      >> ${ROOT_DIR}/etc/fstab
+
+    if [[ -n "${HOME_PART}" ]]; then
+      echo '/dev/md/home  /home    ext4   rw,lazytime,noiversion  0 2' \
+        >> ${ROOT_DIR}/etc/fstab
+    fi
+
+    if [[ -n "${VAR_PART}" ]]; then
+      echo '/dev/md/var   /var     ext4   rw,lazytime,noiversion  0 2' \
+        >> ${ROOT_DIR}/etc/fstab
+    fi
+
+    return
+  fi
 
   local uuid_boot
   local boot_fs_type='ext4'
@@ -890,20 +994,6 @@ set_fstab() {
     uuid_boot="${uuid_boot:0:4}-${uuid_boot:4:8}"
     boot_fs_type='vfat'
   fi
-
-  cat > ${ROOT_DIR}/etc/fstab << EOF
-proc    /proc      proc    rw,nosuid,nodev,noexec,hidepid=2,gid=0  0 0
-sys     /sys       sysfs   rw,nosuid,nodev,noexec                  0 0
-run     /run       tmpfs   rw,nosuid,nodev,mode=0755               0 0
-tmp     /tmp       tmpfs   rw,nosuid,nodev,mode=0777,size=80%      0 0
-
-shm     /dev/shm   tmpfs   rw,nosuid,noexec,mode=1777              0 0
-devpts  /dev/pts   devpts  rw,nosuid,noexec,mode=0620,gid=5        0 0
-lock    /run/lock  tmpfs   rw,nosuid,nodev,noexec,mode=1777        0 0
-
-UUID=${UUID_ROOT}  /      ext4  rw,lazytime,noiversion  0 1
-UUID=${uuid_boot}  /boot  ${boot_fs_type}  rw,sync,noiversion      0 2
-EOF
 
   if [[ "${ENCRYPT_ROOT}" == true ]]; then
     echo "${PART_ENC}        /      ext4  rw,lazytime,noiversion  0 1" >> ${ROOT_DIR}/etc/fstab
@@ -1054,18 +1144,28 @@ install_bootloader() {
     ${CCMD} grub-install --target=i386-pc ${dev} --locales=
 
   elif [[ "${INST_TYPE}" == 'uefi' ]]; then
-    ${CCMD} apt-get -y install grub-efi-amd64
-    ${CCMD} grub-install --efi-directory=/boot --target=x86_64-efi --locales= --bootloader-id=debian
+    if [[ "${RAID}" == 'false' ]]; then
+      ${CCMD} apt-get -y install grub-efi-amd64
+      ${CCMD} grub-install --efi-directory=/boot --target=x86_64-efi \
+        --locales= --bootloader-id=debian
+    else
+      ${CCMD} apt-get -y install grub-efi-amd64 mdadm efibootmgr
+      ${CCMD} grub-install --efi-directory=/boot --target=x86_64-efi \
+        --locales= --no-nvram
+    fi
   fi
 
   # default linux cmdline parameters for grub
   local p
-  if [[ "${ENCRYPT_ROOT}" == true ]]; then
+  if [[ "${RAID}" == 'true' ]]; then
+    p="root=/dev/md/root"
+  elif [[ "${ENCRYPT_ROOT}" == 'true' ]]; then
     p="root=LABEL=${MAP_DEV}"
   else
     p="root=LABEL=${LABEL}-root"
   fi
-  if [[ ${DEV_TYPE} == 'device' ]]; then
+
+  if [[ "${DEV_TYPE}" == 'device' ]]; then
     p+=' console=tty0'
   else
     p+=' nomodeset console=ttyS0,115200n8'
@@ -1074,7 +1174,6 @@ install_bootloader() {
   if [[ "${ENCRYPT_ROOT}" == true ]]; then
     echo "${MAP_DEV} PARTLABEL=${LABEL}-root none luks" > ${ROOT_DIR}/etc/crypttab
     ${CCMD} apt-get -y install cryptsetup-initramfs
-    #${CCMD} update-initramfs -u
   fi
 
   sed -i \
@@ -1084,6 +1183,22 @@ install_bootloader() {
     ${ROOT_DIR}/etc/default/grub
 
   ${CCMD} update-grub
+  ${CCMD} update-initramfs -u
+
+  if [[ "${RAID}" == 'true' ]]; then
+    echo '+ adding uefi entries...'
+
+    devices="$(mdadm --detail -Y /dev/md/boot | grep MD_DEVICE.*DEV= \
+      | cut -d= -f2 | cut -d/ -f3)"
+
+    for dev in ${devices}; do
+      efibootmgr -v -c -d "/dev/$(lsblk -o pkname -d -n /dev/${dev})" -p 1 \
+        -l '\EFI\debian\grubx64.efi' -L ${LABEL}_${dev} \
+        --unicode --full-dev-path
+    done
+
+    unset dev devices
+  fi
 }
 
 sys_config() {
@@ -1120,6 +1235,11 @@ deploy_ssh_key() {
 }
 
 unmount() {
+  if [[ "{SKIP_UNMOUNT}" == 'true' ]]; then
+    echo '+ skipping unmount.'
+    return
+  fi
+
   echo '+ unmounting...'
 
   echo 'unmounting virtual filesystems...'
@@ -1130,12 +1250,12 @@ unmount() {
   umount ${ROOT_DIR}/{dev,sys} && sleep 0.1
   umount ${ROOT_DIR}/var/tmp && sleep 0.1
 
-  if [[ -n "${HOME_SIZE}" ]]; then
+  if [[ -n "${HOME_SIZE}" ]] || [[ -n "${HOME_PART}" ]]; then
     echo 'unmounting /home...'
     umount ${ROOT_DIR}/home && sleep 0.1
   fi
 
-  if [[ -n "${VAR_SIZE}" ]]; then
+  if [[ -n "${VAR_SIZE}" ]] || [[ -n "${VAR_PART}" ]]; then
     echo 'unmounting /var...'
     umount ${ROOT_DIR}/var && sleep 0.1
   fi
