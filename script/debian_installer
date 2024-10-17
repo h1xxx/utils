@@ -82,10 +82,10 @@ sgdisk --new "3::+${var_size}" "${disk2}"
 sgdisk --new "4::+${lvm_size}" "${disk1}"
 sgdisk --new "4::+${lvm_size}" "${disk2}"
 partprobe
-mdadm --create /dev/md/boot --level=1 --raid-devices=2 --metadata 1.0 ${disk1}p1 ${disk2}p1
-mdadm --create /dev/md/root --level=1 --raid-devices=2 --metadata 1.2 ${disk1}p2 ${disk2}p2
-mdadm --create /dev/md/var  --level=1 --raid-devices=2 --metadata 1.2 ${disk1}p3 ${disk2}p3
-mdadm --create /dev/md/lvm  --level=1 --raid-devices=2 --metadata 1.2 ${disk1}p4 ${disk2}p4
+mdadm --create /dev/md/boot --homehost=srv --level=1 --raid-devices=2 --metadata 1.0 ${disk1}p1 ${disk2}p1
+mdadm --create /dev/md/root --homehost=srv --level=1 --raid-devices=2 --metadata 1.2 ${disk1}p2 ${disk2}p2
+mdadm --create /dev/md/var  --homehost=srv --level=1 --raid-devices=2 --metadata 1.2 ${disk1}p3 ${disk2}p3
+mdadm --create /dev/md/lvm  --homehost=srv --level=1 --raid-devices=2 --metadata 1.2 ${disk1}p4 ${disk2}p4
 ./debian_installer -l srv -i enp65s0 -k ~/.ssh/authorized_keys --boot-part /dev/md/boot --root-part /dev/md/root --var-part /dev/md/var --raid -e
 '
   exit 0
@@ -1183,7 +1183,6 @@ install_bootloader() {
     ${ROOT_DIR}/etc/default/grub
 
   ${CCMD} update-grub
-  ${CCMD} update-initramfs -u
 
   if [[ "${RAID}" == 'true' ]]; then
     echo '+ adding uefi entries...'
@@ -1197,8 +1196,12 @@ install_bootloader() {
         --unicode --full-dev-path
     done
 
+    sed -i "s|^HOMEHOST .*|HOMEHOST = ${LABEL}|" ${ROOT_DIR}/etc/mdadm/mdadm.conf
+
     unset dev devices
   fi
+
+  ${CCMD} update-initramfs -u
 }
 
 sys_config() {
