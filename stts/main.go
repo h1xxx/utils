@@ -209,7 +209,10 @@ func main() {
 	vars.login = login
 	vars.debug = debug
 	vars.show = showInit()
-	parseConfig(configFile, &vars)
+
+	err := parseConfig(configFile, &vars)
+	errExit(err)
+
 	getVars(&vars)
 
 	switch {

@@ -8,10 +8,10 @@ import (
 	str "strings"
 )
 
-func parseConfig(file string, vars *varsT) {
+func parseConfig(file string, vars *varsT) error {
 	fd, err := os.Open(file)
 	if err != nil {
-		return
+		return err
 	}
 	defer fd.Close()
 
@@ -23,6 +23,8 @@ func parseConfig(file string, vars *varsT) {
 		}
 		parseLine(line, vars)
 	}
+
+	return nil
 }
 
 func parseLine(line string, vars *varsT) {
