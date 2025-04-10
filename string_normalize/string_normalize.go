@@ -35,7 +35,6 @@ func init() {
 func main() {
 	flag.Parse()
 
-
 	punct := `!"#$%&'()*+,-./:;?@[\]^_{|}~€¹²³°┻┬╲╱┗┛`
 	punct += `–•‐○—′◦°″●“„©‘’®”…´·‚™¨¸¿¡¢£¤¥¦§«¯±»÷×=<>`
 	punct += "`"
@@ -43,21 +42,21 @@ func main() {
 	punct += "🪙️°‼↗⌐╯■□◕☮☺♂❤⬆⬇︵）🌝🍻🏳🏻🏼"
 	punct += "👀👁👄👆👍👏💀💩📈📱🔥😁😂😅😆😎😱😺🙏🚀🚨🤑🤛🤜🤡🤣🤦🦀₮™♀️💎♂️"
 	punct += "🤔🤷💪😉💚👌🙌😍😀🤞😊😄🙃😔😏💯✅🙄😳🐻🤝🎉"
-	
+
 	var replSlice []string
-        for _, c := range punct {
-                replSlice = append(replSlice, string(c))
-                replSlice = append(replSlice, "")
-        }
-        punct_repl := str.NewReplacer(replSlice...)
+	for _, c := range punct {
+		replSlice = append(replSlice, string(c))
+		replSlice = append(replSlice, "")
+	}
+	punct_repl := str.NewReplacer(replSlice...)
 
 	numbers := "0123456789"
 	replSlice = nil
-        for _, c := range numbers {
-                replSlice = append(replSlice, string(c))
-                replSlice = append(replSlice, "")
-        }
-        numbers_repl := str.NewReplacer(replSlice...)
+	for _, c := range numbers {
+		replSlice = append(replSlice, string(c))
+		replSlice = append(replSlice, "")
+	}
+	numbers_repl := str.NewReplacer(replSlice...)
 
 	t := transform.Chain(norm.NFD,
 		runes.Remove(runes.In(unicode.Mn)),
