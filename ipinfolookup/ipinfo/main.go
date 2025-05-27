@@ -166,7 +166,7 @@ func IpStrToInt(ipStr string) (int32, error) {
 func IPLookup(ipRanges []IpInfoT, ip string) (IpInfoT, error) {
 	ipInt, err := IpStrToInt(ip)
 	if err != nil {
-		return IpInfoT{}, nil
+		return IpInfoT{}, err
 	}
 
 	idx := sort.Search(len(ipRanges), func(i int) bool {
