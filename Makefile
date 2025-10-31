@@ -1,5 +1,6 @@
 all:
 	mkdir -p bin
+	CGO_ENABLED=0 go build -o bin/fileren fileren/fileren.go
 	cd stts && CGO_ENABLED=0 go build -o ../bin/stts 
 	cd ipinfolookup && CGO_ENABLED=0 go build -o ../bin/ipinfolookup
 	cd mailcount && CGO_ENABLED=0 go build -o ../bin/mailcount
