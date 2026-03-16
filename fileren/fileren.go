@@ -112,6 +112,7 @@ func rename(s string, rp *str.Replacer) string {
 
 	fn = str.ToLower(fn)
 	fn = replaceEmojis(fn)
+	fn = replaceMathUnicodeLetters(fn)
 	fn = applyReplacer(fn, rp)
 	fn = str.Trim(fn, "_")
 	fn = str.Trim(fn, "-")
@@ -181,4 +182,73 @@ func isEmoji(r rune) bool {
 		(r == 0x1F004) ||
 		(r == 0x1F0CF) ||
 		(r >= 0x1F170 && r <= 0x1F251)
+}
+
+func replaceMathUnicodeLetters(s string) string {
+	var out str.Builder
+	out.Grow(len(s))
+
+	for _, r := range s {
+		// mathematical alphanumeric letters (A-Z, a-z)
+		if r >= 0x1D400 && r <= 0x1D6A3 {
+			offset := (r - 0x1D400) % 52
+			if offset < 26 {
+				out.WriteRune('A' + offset)
+			} else {
+				out.WriteRune('a' + offset - 26)
+			}
+			continue
+		}
+
+		// mathematical alphanumeric digits (0-9)
+		if r >= 0x1D7CE && r <= 0x1D7FF {
+			out.WriteRune('0' + (r-0x1D7CE)%10)
+			continue
+		}
+
+		// the 24 "holes" mapped to the letterlike symbols block;
+		// unicode reserved 24 spots in the math block for characters that were previously
+		// encoded (like planck's constant ℎ, or blackboard bold ℝ)
+		switch r {
+		case 0x212C:
+			out.WriteRune('B')
+		case 0x2102, 0x212D:
+			out.WriteRune('C')
+		case 0x2130:
+			out.WriteRune('E')
+		case 0x2131:
+			out.WriteRune('F')
+		case 0x210B, 0x210C, 0x210D:
+			out.WriteRune('H')
+		case 0x2110, 0x2111:
+			out.WriteRune('I')
+		case 0x2112:
+			out.WriteRune('L')
+		case 0x2133:
+			out.WriteRune('M')
+		case 0x2115:
+			out.WriteRune('N')
+		case 0x2119:
+			out.WriteRune('P')
+		case 0x211A:
+			out.WriteRune('Q')
+		case 0x211B, 0x211C, 0x211D:
+			out.WriteRune('R')
+		case 0x2124, 0x2128:
+			out.WriteRune('Z')
+		case 0x212F:
+			out.WriteRune('e')
+		case 0x210A:
+			out.WriteRune('g')
+		case 0x210E:
+			out.WriteRune('h')
+		case 0x2134:
+			out.WriteRune('o')
+		default:
+			// no replacement
+			out.WriteRune(r)
+		}
+	}
+
+	return str.ToLower(out.String())
 }
