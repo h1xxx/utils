@@ -179,7 +179,7 @@ func IPLookup(ipRanges []IpInfoT, ip string) (IpInfoT, error) {
 	}
 
 	// ip not in range
-	if ipInt < ipRanges[idx].StartIpInt || ipInt >= ipRanges[idx].EndIpInt {
+	if ipInt < ipRanges[idx].StartIpInt || ipInt > ipRanges[idx].EndIpInt {
 		return IpInfoT{}, nil
 	}
 

@@ -151,7 +151,7 @@ func IPLookupCompact(ipRanges []IpInfoCompactT, ip string) (IpInfoCompactT, erro
 	}
 
 	// ip not in range
-	if ipInt < ipRanges[idx].StartIpInt || ipInt >= ipRanges[idx].EndIpInt {
+	if ipInt < ipRanges[idx].StartIpInt || ipInt > ipRanges[idx].EndIpInt {
 		return IpInfoCompactT{}, nil
 	}
 
